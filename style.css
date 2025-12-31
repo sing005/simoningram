@@ -1,0 +1,106 @@
+/* Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    padding: 20px 40px;
+    max-width: 900px;
+    margin: 0;
+    background: #fff;
+    color: #000;
+    text-align: left;
+}
+
+/* Background image ONLY on index page */
+body.index-page {
+    background: #fff url('images/rotokare.jpg') no-repeat center center fixed;
+    background-size: cover;
+}
+
+/* Header Navigation */
+header {
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #ddd;
+}
+
+nav {
+    font-size: 14px;
+}
+
+nav a {
+    color: #000;
+    text-decoration: none;
+    margin-right: 10px;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+/* Headings */
+h1 {
+    font-size: 18px;
+    margin-bottom: 15px;
+    font-weight: bold;
+}
+
+/* Index Page Entries */
+.index-entry {
+    margin-bottom: 5px;
+    line-height: 1.4;
+}
+
+/* Links */
+a {
+    color: #00f;
+    text-decoration: underline;
+}
+
+a:visited {
+    color: #609;
+}
+
+a:hover {
+    text-decoration: none;
+}
+
+/* Override for navigation links */
+nav a {
+    color: #000;
+    text-decoration: none;
+}
+
+nav a:visited {
+    color: #000;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+/* Project Pages */
+.project-page p {
+    margin-bottom: 15px;
+}
+
+.placeholder-image {
+    width: 400px;
+    height: 400px;
+    background: #000;
+    margin: 20px 0;
+}
+
+/* Footer */
+footer {
+    margin-top: 50px;
+    padding-top: 20px;
+    border-top: 1px solid #ddd;
+    font-size: 12px;
+    color: #aaa;
+}

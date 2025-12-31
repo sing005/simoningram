@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading... - Simon Ingram</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="index.html">Simon Ingram</a> | 
+            <a href="contact.html">Contact</a> | 
+            <a href="about.html">About</a>
+        </nav>
+    </header>
+
+    <main class="project-page">
+        <h1 id="project-title">Loading...</h1>
+        
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+        
+        <div class="placeholder-image"></div>
+        
+        <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+        
+        <p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.</p>
+        
+        <div class="placeholder-image"></div>
+        
+        <p>Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.</p>
+        
+        <p><a href="index.html">← Back to index</a></p>
+    </main>
+
+    <footer>
+        © 2025 Simon Ingram
+    </footer>
+
+    <script>
+        // Get title from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const title = urlParams.get('title');
+        
+        if (title) {
+            // Update the h1 and page title
+            document.getElementById('project-title').textContent = title;
+            document.title = title + ' - Simon Ingram';
+        } else {
+            // Fallback if no title parameter
+            document.getElementById('project-title').textContent = 'Project';
+            document.title = 'Project - Simon Ingram';
+        }
+    </script>
+</body>
+</html>
