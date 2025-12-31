@@ -5,15 +5,23 @@
     box-sizing: border-box;
 }
 
+/* Layout foundation for sticky footer */
+html, body {
+    height: 100%;
+}
+
 body {
     font-family: Arial, sans-serif;
     line-height: 1.6;
     padding: 20px 40px;
     max-width: 900px;
-    margin: 0;
+    margin: 0 auto;
     background: #fff;
     color: #000;
     text-align: left;
+
+    display: flex;
+    flex-direction: column; /* enables footer push-down */
 }
 
 /* Background image ONLY on index page */
@@ -31,12 +39,15 @@ header {
 
 nav {
     font-size: 14px;
+    display: flex;
+    gap: 20px; /* equal spacing between items */
+    align-items: center;
 }
 
-nav a {
+nav a,
+nav strong {
     color: #000;
     text-decoration: none;
-    margin-right: 10px;
 }
 
 nav a:hover {
@@ -98,9 +109,10 @@ nav a:hover {
 
 /* Footer */
 footer {
-    margin-top: 50px;
+    margin-top: auto; /* pushes footer to bottom */
     padding-top: 20px;
     border-top: 1px solid #ddd;
     font-size: 12px;
     color: #aaa;
+    text-align: center;
 }
