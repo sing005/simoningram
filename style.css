@@ -4,12 +4,10 @@
     padding: 0;
     box-sizing: border-box;
 }
-
 /* Layout foundation for sticky footer */
 html, body {
     height: 100%;
 }
-
 body {
     font-family: Arial, sans-serif;
     line-height: 1.6;
@@ -19,97 +17,90 @@ body {
     background: #fff;
     color: #000;
     text-align: left;
-
     display: flex;
-    flex-direction: column; /* enables footer push-down */
+    flex-direction: column;
 }
-
 /* Background image ONLY on index page */
 body.index-page {
-    background: #fff url('images/rotokare.jpg') no-repeat center center fixed;
-    background-size: cover;
+    background: transparent;
 }
-
+body.index-page::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: url('images/rotokare.jpg') no-repeat center center;
+    background-size: cover;
+    z-index: -1;
+}
 /* Header Navigation */
 header {
     margin-bottom: 30px;
     padding-bottom: 15px;
     border-bottom: 0px solid #ddd;
 }
-
 nav {
     font-size: 14px;
     display: flex;
-    gap: 20px; /* equal spacing between items */
+    gap: 20px;
     align-items: center;
 }
-
 nav a,
 nav strong {
     color: #000;
     text-decoration: none;
 }
-
 nav a:hover {
     text-decoration: underline;
 }
-
 /* Headings */
 h1 {
     font-size: 18px;
     margin-bottom: 15px;
     font-weight: bold;
 }
-
 /* Index Page Entries */
 .index-entry {
     margin-bottom: 5px;
     line-height: 1.4;
 }
-
 /* Links */
 a {
     color: #00f;
     text-decoration: underline;
 }
-
 a:visited {
     color: #609;
 }
-
 a:hover {
     text-decoration: none;
 }
-
 /* Override for navigation links */
 nav a {
     color: #000;
     text-decoration: none;
 }
-
 nav a:visited {
     color: #000;
 }
-
 nav a:hover {
     text-decoration: underline;
 }
-
 /* Project Pages */
 .project-page p {
     margin-bottom: 15px;
 }
-
 .placeholder-image {
     width: 400px;
     height: 400px;
     background: #000;
     margin: 20px 0;
 }
-
 /* Footer */
 footer {
-    margin-top: auto; /* pushes footer to bottom */
+    margin-top: auto;
     padding-top: 20px;
     border-top: 0px solid #ddd;
     font-size: 12px;
