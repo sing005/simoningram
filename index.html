@@ -1,0 +1,1652 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Te Taiao — voxel soil</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--void:#08090a;--ink:#101113;--edge:#24262a;--text:#c9ccd1;--dim:#6e737b;--faint:#454a51;
+ --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--void)}
+body{color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.5;
+ padding:16px 14px 34px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.02em}
+h1 span{color:var(--faint);font-weight:400}
+.clock{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+.clock b{color:var(--text);font-weight:500}
+.lede{color:var(--dim);font-size:12px;margin:6px 0 12px;max-width:90ch}
+
+.sky{display:flex;align-items:center;gap:10px;margin-bottom:10px;
+ border:1px solid var(--edge);background:var(--ink);padding:7px 10px;flex-wrap:wrap}
+.sky .lbl{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.sky .meter{flex:1;min-width:120px;height:8px;background:#000;border:1px solid var(--edge);
+ position:relative;overflow:hidden}
+.sky .meter i{position:absolute;inset:0 100% 0 0;background:#4aa3e8;transition:right .2s linear}
+.sky .state{font-size:11px;width:9ch;text-align:right}
+.sky .wind{font-size:11px;color:var(--dim);width:11ch;text-align:right;font-variant-numeric:tabular-nums}
+
+.stage{position:relative;border:1px solid var(--edge);background:#000;overflow:hidden}
+canvas#gl{display:block;width:100%;height:auto;image-rendering:pixelated;
+ image-rendering:crisp-edges;touch-action:none;cursor:grab}
+canvas#gl.drag{cursor:grabbing}
+.tags{position:absolute;inset:0;pointer-events:none}
+.tag{position:absolute;top:7px;font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+ font-weight:600;text-shadow:0 1px 3px #000}
+.tag.l{left:10px;color:#95c74e}
+.tag.r{left:50%;margin-left:10px;color:#a894dc}
+.tag em{display:block;font-style:normal;font-size:9.5px;letter-spacing:.04em;
+ text-transform:none;font-weight:400;color:var(--dim);margin-top:2px}
+.split{position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--edge)}
+.gone{padding:24px;color:var(--dim);font-size:12px}
+
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--edge);
+ border-top:none;background:var(--ink)}
+.stats>div{padding:6px 10px;display:flex;flex-wrap:wrap;gap:0 14px;font-size:10.5px;
+ color:var(--dim);font-variant-numeric:tabular-nums}
+.stats>div+div{border-left:1px solid var(--edge)}
+.stats b{color:var(--text);font-weight:500}
+.stats .warn b{color:#e0724a}
+
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+button{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+ padding:6px 12px;border:1px solid var(--edge);background:#000;color:var(--text);cursor:pointer}
+button:hover{border-color:var(--dim)}
+button.on{background:var(--text);color:var(--void);border-color:var(--text)}
+button:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.view{display:flex;gap:4px;flex-wrap:wrap}
+.view button{padding:5px 9px;font-size:10px}
+.spd{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dim);margin-left:auto}
+.spd input{width:100px;accent-color:#4aa3e8}
+
+.knobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px 18px;
+ margin-top:12px;border:1px solid var(--edge);background:var(--ink);padding:10px 12px}
+.knobs label{display:block}
+.knobs span{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);
+ margin-bottom:3px}
+.knobs b{color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}
+.knobs input{width:100%;accent-color:#4aa3e8}
+
+.palette{margin-top:12px;border:1px solid var(--edge);background:var(--ink);padding:9px 10px}
+.palette h2{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+ margin:0 0 8px;font-weight:600}
+.pal{display:flex;flex-wrap:wrap;gap:4px 5px}
+.el{display:flex;align-items:center;gap:6px;padding:3px 7px 3px 4px;border:1px solid var(--edge);
+ font-size:10.5px;color:var(--dim);background:#000}
+.el i{width:10px;height:10px;flex-shrink:0}
+.el b{color:var(--text);font-weight:500}
+.el em{font-style:normal;color:var(--faint)}
+
+.chart{margin-top:12px;border:1px solid var(--edge);background:var(--ink);padding:9px 10px}
+.chart .ct{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;
+ font-size:10.5px;color:var(--faint);margin-bottom:7px}
+.chart .ct i{font-style:normal;display:inline-block;width:14px;height:2px;
+ vertical-align:middle;margin:0 4px 3px 12px}
+.chart canvas{display:block;width:100%;height:110px;background:#000;border:1px solid var(--edge)}
+footer{margin-top:16px;color:var(--faint);font-size:11px;line-height:1.6;max-width:94ch}
+footer b{color:var(--dim);font-weight:500}
+footer code{color:var(--dim)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Te Taiao <span>— voxel soil</span></h1>
+  <div class="clock">step <b id="tick">0</b> · day <b id="day">0</b> · <b id="fps">—</b> · <b id="sps">—</b></div>
+</header>
+<p class="lede">Two blocks of earth under one sky, raymarched. Rain, litter and fertiliser fall
+as particles; the soil underneath runs the passes ported from <code style="color:var(--dim)">SoilCube.java</code>;
+dandelions grow, flower, and seed on the wind. Drag to turn the blocks; the sliders set how far
+you can see into them. Nothing else to do.</p>
+
+<div class="sky">
+  <span class="lbl">Sky</span><span class="meter"><i id="skyBar"></i></span>
+  <span class="state" id="skyState">clear</span>
+  <span class="wind" id="windLbl">wind —</span>
+  <span class="wind" id="sunLbl" style="width:9ch">sun —</span>
+  <span class="lbl" id="spreading" style="opacity:.18;color:#a894dc">spreading</span>
+</div>
+
+<div class="stage">
+  <canvas id="gl"></canvas>
+  <div class="tags">
+    <div class="split"></div>
+    <span class="tag l">Regenerative<em>living roots · leaf litter</em></span>
+    <span class="tag r">Synthetic<em>bare fallow · applied N</em></span>
+  </div>
+</div>
+<div class="stats">
+  <div id="stR"></div><div id="stS"></div>
+</div>
+<div id="errline" style="display:none;border:1px solid #5a3030;background:#1a0f0f;
+ color:#d99;padding:6px 10px;font-size:11px;margin-top:8px"></div>
+<div id="diag" style="color:#454a51;font-size:10px;margin-top:6px;
+ font-variant-numeric:tabular-nums">build — · starting</div>
+
+<div class="bar">
+  <button id="play" class="on">Pause</button>
+  <button id="reset">Restart</button>
+  <div class="view" id="views"></div>
+  <span class="spd">speed <input type="range" id="spd" min="1" max="4" value="1"><b id="spdV">1×</b></span>
+</div>
+
+<div class="knobs">
+  <label><span>Opacity <b id="opV">0.55</b></span>
+    <input type="range" id="op" min="4" max="100" value="55"></label>
+  <label><span>See-through where crowded <b id="okV">0.78</b></span>
+    <input type="range" id="ok" min="0" max="98" value="78"></label>
+  <label><span>Gap between cubes <b id="gpV">0.20</b></span>
+    <input type="range" id="gp" min="0" max="45" value="20"></label>
+</div>
+
+<div class="palette">
+  <h2>What the colours are</h2>
+  <div class="pal" id="pal"></div>
+</div>
+
+<div class="chart">
+  <div class="ct"><span id="chTitle">Fungal matter, averaged over the whole block</span>
+    <span>recent steps<i style="background:#95c74e"></i>regenerative<i style="background:#a894dc"></i>synthetic</span></div>
+  <canvas id="chart"></canvas>
+</div>
+
+<footer id="foot"></footer>
+</div>
+
+<script id="app">
+"use strict";
+/*SIM-START*/
+/* ===================================================================
+   The simulation. Everything between the SIM markers is shared with a
+   Web Worker: the page slices its own source and runs this code in a
+   background thread, because at this grid size one soil step costs
+   more than a frame and would freeze the rotation if it ran here.
+   createSim() owns all the heavy allocation, so the page itself never
+   pays for arrays it does not use.
+   =================================================================== */
+const MIN_MOVE=0.005, MIN_NO2=0.005, BACTERIA_NO2_FIXING=0.1,
+ OM_TO_BACTERIA_FOOD=0.01, OM_TO_FUNGI_FOOD=0.01,
+ CARBON_TO_BACTERIA_FOOD=0.05, CARBON_TO_FUNGI_FOOD=0.05,
+ FUNGI_FOOD_NEEDED=0.005, BACTERIA_FOOD_NEEDED=0.01,
+ FOOD_TO_BACTERIA=0.5, FOOD_TO_FUNGI=1.0, BACTERIA_PERM_FACTOR=0.05,
+ CARBON_MOVE_FACTOR=0.1, EVAPORATION_RATE=0.004,
+ LEACH_NITROGEN=1.0, LEACH_BACTERIA=0.5, LEACH_FUNGI=0.3, LEACH_ORGANIC=0.2,
+ FLOW_DOWN=1/3, FLOW_SIDE=1/5, COMPACTION=0.02,
+ INFILT=0.16, PERM_FLOOR=0.03, SLOPE=1, DROP=0.03, POND_MAX=4;
+
+let NX=96, NY=88, NZ=96, GROUND=44;   // overridable before createSim, for tests
+const DAY_LEN=24;   // steps per day; the 'day' counter has always been t/24
+
+/* The sun. Rises at the +x edge of the blocks, arcs overhead, sets at the
+   -x edge -- right to left as the piece opens. Pure function of the step,
+   so the page and the worker compute the same sun. */
+function sunState(t){
+  const ph=(((t%DAY_LEN)+DAY_LEN)%DAY_LEN)/DAY_LEN;
+  const up=(ph-0.04)/0.62;              // the daylight window of the cycle
+  if(up<=0||up>=1)return {dir:[0.0,-1.0,0.0],amt:0,ph};
+  const az=Math.PI*up;
+  let x=Math.cos(az), y=Math.sin(az)*1.15, z=0.30;
+  const L=Math.hypot(x,y,z);
+  return {dir:[x/L,y/L,z/L], amt:Math.sin(az), ph};
+}
+
+const FIELDS=['moisture','permeability','organic','fungi','bacteria',
+              'nitrogen','carbon','ammonium'];
+const clamp01=v=>v<0?0:v>1?1:v;
+const clampedAdd=(c,d)=>clamp01(c+d)-c;
+function flowAmount(src,dst,req){
+  if(req<MIN_MOVE||src<MIN_MOVE)return 0;
+  let a=req<src?req:src;
+  const t=1-dst; if(t<a)a=t;
+  return a<MIN_MOVE?0:a;
+}
+
+/* -------------------- soil kernels --------------------
+   SoilCube.process() and the transport half of interact(), ported from
+   the Java by way of the Warp version. Buffer handling differs from the
+   readable port in two ways, neither of which alters a result (verified
+   bit-for-bit over 150 steps): microbes reads and writes only its own
+   cell so it runs in place, and applyFlux copies only the two fields it
+   does not overwrite. The two saturation scales are computed in one
+   fused pass. */
+class SoilWorld{
+  constructor(nx,ny,nz){
+    this.nx=nx;this.ny=ny;this.nz=nz;this.n=nx*ny*nz;this.ground=ny>>1;
+    this.exudation=0;this.tick=0;this.sun=0;
+    this.a={};this.b={};
+    for(const f of FIELDS){this.a[f]=new Float32Array(this.n);this.b[f]=new Float32Array(this.n);}
+    this.solid=new Uint8Array(this.n);
+    this.root=new Float32Array(this.n);
+    this.surfaceY=new Int32Array(nx*nz);
+    this.wFlux=new Float32Array(this.n*3);
+    this.cFlux=new Float32Array(this.n*3);
+    this.wScale=new Float32Array(this.n);
+    this.cScale=new Float32Array(this.n);
+  }
+  idx(i,j,k){return (i*this.ny+j)*this.nz+k;}
+
+  fill(mode,seed){
+    const {nx,ny,nz,ground}=this;
+    let s=(seed>>>0)||1;
+    const rnd=()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296;};
+    const jit=sp=>(rnd()-.5)*2*sp;
+    const regen=mode==='REGENERATIVE';
+    for(const f of FIELDS){this.a[f].fill(0);this.b[f].fill(0);}
+    for(let i=0;i<nx;i++)for(let k=0;k<nz;k++){
+      this.surfaceY[i*nz+k]=ground-1;
+      for(let j=0;j<ny;j++){
+        const p=this.idx(i,j,k);
+        if(j>=ground){this.solid[p]=0;continue;}
+        this.solid[p]=1;
+        const up=1-(ground-j)/ground;
+        if(regen){
+          this.a.moisture[p]=clamp01(.30+jit(.05));
+          this.a.permeability[p]=clamp01(up*.7+.15);
+          this.a.organic[p]=clamp01(up*up*.8);
+          this.a.fungi[p]=clamp01(up*.4);
+          this.a.bacteria[p]=clamp01(up*.5);
+          this.a.nitrogen[p]=clamp01(.2+jit(.03));
+          this.a.carbon[p]=clamp01(.15+jit(.03));
+          this.a.ammonium[p]=clamp01(.05+jit(.01));
+        }else{
+          this.a.moisture[p]=clamp01(.18+jit(.03));
+          this.a.permeability[p]=clamp01(up*.22+.04);
+          this.a.organic[p]=clamp01(up*up*.10);
+          this.a.fungi[p]=clamp01(.01+jit(.005));
+          this.a.bacteria[p]=clamp01(up*.10);
+          this.a.nitrogen[p]=clamp01(.40+jit(.05));
+          this.a.carbon[p]=clamp01(.03+jit(.01));
+          this.a.ammonium[p]=clamp01(.28+jit(.04));
+        }
+      }
+    }
+    this.tick=0;
+  }
+
+  /* A root system, grown once. In the Java this is RootCode -- a recursive
+     L-system gated by a resource budget. Here it is the shape of that
+     result: seed points at the surface, a walk downward with lateral
+     drift, branches thrown off along the way, thinning with depth.
+     Exudation comes out of root cells, so carbon enters the soil in
+     patches and the fungi that live on it grow in patches too. */
+  growRoots(spec,seed){
+    const {nx,ny,nz,ground,root}=this;
+    root.fill(0);
+    let s=(seed>>>0)||3;
+    const rnd=()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296;};
+    const put=(i,j,k,v)=>{
+      if(i<0||i>=nx||j<0||j>=ground||k<0||k>=nz)return;
+      const p=(i*ny+j)*nz+k;
+      if(root[p]<v)root[p]=v;
+    };
+    const walk=(i,k,j,thick,depth,drift)=>{
+      let x=i,z=k,y=j;
+      for(let n=0;n<depth;n++){
+        if(y<0)break;
+        const r=thick*(1-n/depth);
+        put(x,y,z,Math.max(0.15,r));
+        if(r>0.55){
+          put(x+1,y,z,r*0.55);put(x-1,y,z,r*0.55);
+          put(x,y,z+1,r*0.55);put(x,y,z-1,r*0.55);
+        }
+        if(rnd()<drift)x+=rnd()<0.5?-1:1;
+        if(rnd()<drift)z+=rnd()<0.5?-1:1;
+        y--;
+        if(n>2&&rnd()<spec.branch)
+          walk(x,z,y,thick*0.45,Math.round((depth-n)*0.7)+2,drift*1.9);
+      }
+    };
+    for(let n=0;n<spec.count;n++){
+      const i=(rnd()*nx)|0, k=(rnd()*nz)|0;
+      walk(i,k,ground-1,spec.thick,spec.depth,spec.drift);
+    }
+  }
+
+  swap(){const t=this.a;this.a=this.b;this.b=t;}
+
+  microbes(){this.microbesRange(0,this.nx);}
+  microbesRange(i0,i1){
+    const {ny,nz,a,solid,surfaceY,ground,root}=this;
+    const ORG=a.organic,BAC=a.bacteria,PER=a.permeability,MOI=a.moisture,
+          CAR=a.carbon,FUN=a.fungi,NIT=a.nitrogen;
+    for(let i=i0;i<i1;i++)for(let j=0;j<ground;j++){
+      let p=(i*ny+j)*nz;
+      for(let k=0;k<nz;k++,p++){
+        if(!solid[p])continue;
+        let org=ORG[p],bac=BAC[p],perm=PER[p],
+            wat=MOI[p],car=CAR[p],fun=FUN[p],nit=NIT[p];
+        if(bac>0){
+          let cF=0,oF=0;
+          if(car>0){cF=car*bac*CARBON_TO_BACTERIA_FOOD;car+=clampedAdd(car,-cF);}
+          if(org>0){oF=org*bac*OM_TO_BACTERIA_FOOD;org+=clampedAdd(org,-oF);}
+          bac+=clampedAdd(bac,((cF+oF)-bac*BACTERIA_FOOD_NEEDED)*FOOD_TO_BACTERIA);
+          const settle=perm>PERM_FLOOR?COMPACTION*(perm-PERM_FLOOR):0;
+          perm+=clampedAdd(perm,bac*BACTERIA_PERM_FACTOR-settle);
+          let d=surfaceY[i*nz+k]-j+1; if(d<1)d=1;
+          const no2=perm/d;
+          if(no2>MIN_NO2)nit+=clampedAdd(nit,bac*no2*BACTERIA_NO2_FIXING);
+        }
+        if(fun>0){
+          let cF=0,oF=0;
+          if(car>0){cF=car*fun*CARBON_TO_FUNGI_FOOD;car+=clampedAdd(car,-cF);}
+          if(org>0){oF=org*fun*OM_TO_FUNGI_FOOD;org+=clampedAdd(org,-oF);}
+          fun+=clampedAdd(fun,((cF+oF)-fun*FUNGI_FOOD_NEEDED)*FOOD_TO_FUNGI);
+        }
+        if(wat>0&&j===ground-1)
+          wat=clamp01(wat-EVAPORATION_RATE*(0.3+1.4*this.sun));
+        const rt=root[p];
+        if(rt>0&&this.exudation>0)car+=clampedAdd(car,this.exudation*rt);
+        ORG[p]=org;BAC[p]=bac;PER[p]=perm;
+        MOI[p]=wat;CAR[p]=car;FUN[p]=fun;NIT[p]=nit;
+      }
+    }
+  }
+
+  computeFlux(){this.computeFluxRange(0,this.nx);}
+  computeFluxRange(i0,i1){
+    const {nx,ground,nz,ny,a,solid,wFlux,cFlux}=this;
+    wFlux.fill(0,i0*ny*nz*3,i1*ny*nz*3);
+    cFlux.fill(0,i0*ny*nz*3,i1*ny*nz*3);
+    const SX=ny*nz, SY=nz;
+    const M=a.moisture,P=a.permeability,F=a.fungi,B=a.bacteria,C=a.carbon;
+    for(let i=i0;i<i1;i++){
+      const hasX=i+1<nx;
+      for(let j=0;j<ground;j++){
+        const hasY=j+1<ground;
+        let p=(i*ny+j)*nz;
+        for(let k=0;k<nz;k++,p++){
+          if(!solid[p])continue;
+          const mA=M[p],pA=P[p],fA=F[p],bA=B[p],cA=C[p];
+          const capA=pA*.5+fA*.5, sA=capA<=0?1:mA/capA;
+          const vA=mA*((2-(fA+bA))*.25+.5);
+          const f3=p*3;
+          for(let ax=0;ax<3;ax++){
+            let q;
+            if(ax===0){if(!hasX)continue;q=p+SX;}
+            else if(ax===1){if(!hasY)continue;q=p+SY;}
+            else{if(k+1>=nz)continue;q=p+1;}
+            if(!solid[q])continue;
+            const mB=M[q],pB=P[q],fB=F[q],bB=B[q],cB=C[q];
+            const capB=pB*.5+fB*.5, sB=capB<=0?1:mB/capB;
+            const vB=mB*((2-(fB+bB))*.25+.5);
+            const vert=ax===1;
+            let w=0;
+            if(sA>sB){let g=(vA-vB)*pB;
+              if(g>0){g*=vert?FLOW_SIDE:FLOW_DOWN;w=flowAmount(mA,mB,g);}}
+            else if(sB>sA){let g=(vB-vA)*pA;
+              if(g>0){g*=vert?FLOW_DOWN:FLOW_SIDE;w=-flowAmount(mB,mA,g);}}
+            wFlux[f3+ax]=w;
+            let c=0;
+            if(cA>cB)c=flowAmount(cA,cB,(cA-cB)*CARBON_MOVE_FACTOR*pB);
+            else if(cB>cA)c=-flowAmount(cB,cA,(cB-cA)*CARBON_MOVE_FACTOR*pA);
+            cFlux[f3+ax]=c;
+          }
+        }
+      }
+    }
+  }
+  /* both limiter fields in one pass over the flux arrays */
+  computeScales(){this.computeScalesRange(0,this.nx);}
+  computeScalesRange(i0,i1){
+    const {ground,nz,ny,a,wFlux,cFlux,wScale,cScale}=this;
+    const SX=ny*nz, SY=nz, W=a.moisture, C=a.carbon;
+    for(let i=i0;i<i1;i++)for(let j=0;j<ground;j++){
+      let p=(i*ny+j)*nz;
+      for(let k=0;k<nz;k++,p++){
+        const f3=p*3;
+        let dw=0,dc=0,v;
+        v=wFlux[f3];   if(v>0)dw+=v;
+        v=wFlux[f3+1]; if(v>0)dw+=v;
+        v=wFlux[f3+2]; if(v>0)dw+=v;
+        v=cFlux[f3];   if(v>0)dc+=v;
+        v=cFlux[f3+1]; if(v>0)dc+=v;
+        v=cFlux[f3+2]; if(v>0)dc+=v;
+        if(i>0){const b3=(p-SX)*3;
+          v=wFlux[b3];  if(v<0)dw-=v; v=cFlux[b3];  if(v<0)dc-=v;}
+        if(j>0){const b3=(p-SY)*3+1;
+          v=wFlux[b3];  if(v<0)dw-=v; v=cFlux[b3];  if(v<0)dc-=v;}
+        if(k>0){const b3=(p-1)*3+2;
+          v=wFlux[b3];  if(v<0)dw-=v; v=cFlux[b3];  if(v<0)dc-=v;}
+        const aw=W[p], ac=C[p];
+        wScale[p]=(dw<=aw||dw<=0)?1:aw/dw;
+        cScale[p]=(dc<=ac||dc<=0)?1:ac/dc;
+      }
+    }
+  }
+  applyFlux(){this.applyFluxRange(0,this.nx);this.finishStep();}
+  applyFluxRange(i0,i1){
+    const {ground,nz,ny,a,b,wFlux,cFlux,wScale,cScale}=this;
+    const SX=ny*nz, SY=nz;
+    const lo=i0*ny*nz, hi=i1*ny*nz;
+    b.permeability.set(a.permeability.subarray(lo,hi),lo);
+    b.ammonium.set(a.ammonium.subarray(lo,hi),lo);
+    const M=a.moisture,N=a.nitrogen,B=a.bacteria,F=a.fungi,O=a.organic,C=a.carbon;
+    const oM=b.moisture,oN=b.nitrogen,oB=b.bacteria,oF=b.fungi,oO=b.organic,oC=b.carbon;
+    for(let i=i0;i<i1;i++)for(let j=0;j<ground;j++){
+      let p=(i*ny+j)*nz;
+      for(let k=0;k<nz;k++,p++){
+        let dW=0,dN=0,dB=0,dF=0,dO=0,dC=0;
+        for(let face=0;face<6;face++){
+          const ax=face%3, mine=face<3;
+          const step=ax===0?SX:ax===1?SY:1;
+          let o=p;
+          if(!mine){
+            if(ax===0){if(i===0)continue;}
+            else if(ax===1){if(j===0)continue;}
+            else{if(k===0)continue;}
+            o=p-step;
+          }
+          const o3=o*3+ax;
+          let w=wFlux[o3], c=cFlux[o3];
+          if(w>0)w*=wScale[o]; else if(w<0)w*=wScale[o+step];
+          if(c>0)c*=cScale[o]; else if(c<0)c*=cScale[o+step];
+          if(mine){w=-w;c=-c;}
+          dC+=c;
+          if(w===0)continue;
+          const g=w>0?(mine?p+step:o):p;
+          const mv=w<0?-w:w, sg=w<0?-1:1;
+          dW+=w;
+          dN+=sg*N[g]*mv*LEACH_NITROGEN;
+          dB+=sg*B[g]*mv*LEACH_BACTERIA;
+          dF+=sg*F[g]*mv*LEACH_FUNGI;
+          dO+=sg*O[g]*mv*LEACH_ORGANIC;
+        }
+        oM[p]=clamp01(M[p]+dW); oN[p]=clamp01(N[p]+dN);
+        oB[p]=clamp01(B[p]+dB); oF[p]=clamp01(F[p]+dF);
+        oO[p]=clamp01(O[p]+dO); oC[p]=clamp01(C[p]+dC);
+      }
+    }
+  }
+  finishStep(){this.swap();this.tick++;}
+  soilStep(){
+    this.microbes();
+    this.computeFlux();
+    this.computeScales();
+    this.applyFlux();
+  }
+  mean(f){let s=0,n=0;const A=this.a[f];
+    for(let p=0;p<this.n;p++)if(this.solid[p]){s+=A[p];n++;}
+    return n?s/n:0;}
+  headroom(i,k){
+    const p=this.idx(i,this.ground-1,k);
+    const cap=this.a.permeability[p]*.5+this.a.fungi[p]*.5;
+    return Math.min(Math.max(0,cap-this.a.moisture[p]),this.a.permeability[p]*INFILT);
+  }
+  deposit(i,k,field,amount){
+    const p=this.idx(i,this.ground-1,k);
+    this.a[field][p]=clamp01(this.a[field][p]+amount);
+  }
+}
+
+/* -------------------- the falling-sand layer --------------------
+   One element per air cell. Rain, litter, fertiliser and spores fall;
+   dandelion seeds travel on the wind; dandelion cells stand still. Rows
+   with nothing in them are skipped, which is most of the sky most of
+   the time. */
+const EMPTY=0, WATER=1, LITTER=2, FERT=3, SPORE=4, SEED=5,
+      STEM=6, LEAF=7, FLOWER=8, PUFF=9;   // STEM and above do not move
+
+class Sky{
+  constructor(soil,recipe){
+    this.soil=soil;this.recipe=recipe;
+    this.nx=soil.nx;this.ny=soil.ny;this.nz=soil.nz;this.ground=soil.ground;
+    this.cell=new Uint8Array(soil.n);
+    this.age=new Uint8Array(soil.n);
+    this.moved=new Uint8Array(soil.n);
+    this.layerN=new Int32Array(this.ny);
+    this.soaked=0;this.runoff=0;this.dir=1;
+    this.litterScale=1;this.fertRate=0;
+    this.landed=[];
+    this.exitSeeds=[];
+    this.seed=(recipe.seed>>>0)||9;
+  }
+  rnd(){let s=this.seed;s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;this.seed=s;
+    return s/4294967296;}
+  at(i,j,k){return this.cell[(i*this.ny+j)*this.nz+k];}
+  setN(n,v){
+    const o=this.cell[n];
+    if(o===v)return;
+    const j=((n/this.nz)|0)%this.ny;
+    if(o)this.layerN[j]--;
+    if(v)this.layerN[j]++;
+    this.cell[n]=v;
+  }
+  set(i,j,k,v){this.setN((i*this.ny+j)*this.nz+k,v);}
+
+  spawn(rain){
+    const {nx,nz,ny,ground,recipe}=this;
+    const top=ny-1;
+    for(let i=0;i<nx;i++)for(let k=0;k<nz;k++){
+      if(this.at(i,top,k)!==EMPTY)continue;
+      const r=this.rnd();
+      if(r<rain*0.20){this.set(i,top,k,WATER);continue;}
+      const lit=recipe.litter*this.litterScale;
+      if(lit>0&&r<rain*0.20+lit){this.set(i,top,k,LITTER);continue;}
+      if(this.fertRate>0&&r<rain*0.20+lit+this.fertRate){this.set(i,top,k,FERT);continue;}
+    }
+    if(recipe.litter>0){
+      for(let n=0;n<4;n++){
+        const i=(this.rnd()*nx)|0, k=(this.rnd()*nz)|0, j=ground+1;
+        if(j>=ny||this.at(i,j,k)!==EMPTY)continue;
+        if(this.soil.a.fungi[this.soil.idx(i,ground-1,k)]>0.35&&this.rnd()<0.3)
+          this.set(i,j,k,SPORE);
+      }
+    }
+  }
+
+  step(rain,wind){
+    this.stepBegin(rain);
+    this.stepRows(this.ground,this.ny,wind);
+  }
+  stepBegin(rain){
+    this.spawn(rain);
+    this.dir=-this.dir;
+    this.moved.fill(0);
+  }
+  stepRows(j0,j1,wind){
+    const {nx,ny,nz,ground,cell,moved,age,layerN}=this;
+    const DX=[1,-1,0,0], DZ=[0,0,1,-1];
+
+    for(let j=j0;j<j1;j++){
+      if(!layerN[j])continue;
+      const i0=this.dir>0?0:nx-1, i1=this.dir>0?nx:-1;
+      for(let i=i0;i!==i1;i+=this.dir){
+        for(let k=0;k<nz;k++){
+          const n=(i*ny+j)*nz+k, e=cell[n];
+          if(e===EMPTY||moved[n])continue;
+          if(e>=STEM)continue;                 // plants do not move
+
+          if(e===SPORE){
+            const nj=j+1;
+            this.setN(n,EMPTY);
+            if(nj<ny){
+              const ni=Math.max(0,Math.min(nx-1,i+((this.rnd()*3)|0)-1));
+              const nk=Math.max(0,Math.min(nz-1,k+((this.rnd()*3)|0)-1));
+              if(this.at(ni,nj,nk)===EMPTY){
+                this.set(ni,nj,nk,SPORE);moved[(ni*ny+nj)*nz+nk]=1;
+              }
+            }
+            continue;
+          }
+
+          if(e===SEED){
+            if(age[n]>240){this.setN(n,EMPTY);continue;}   // spent
+            if(age[n]++%2)continue;            // seeds fall at half rate
+            if(this.rnd()<Math.abs(wind)*0.85){
+              const ni=i+(wind>0?1:-1);
+              if(ni<0||ni>=nx){
+                this.exitSeeds.push({j,k,side:wind>0?1:-1});
+                this.setN(n,EMPTY);continue;
+              }
+              if(this.at(ni,j,k)===EMPTY){
+                this.setN(n,EMPTY);this.set(ni,j,k,SEED);
+                moved[(ni*ny+j)*nz+k]=1;continue;
+              }
+            }
+            if(this.rnd()<0.22){
+              const nk=k+(this.rnd()<0.5?-1:1);
+              if(nk>=0&&nk<nz&&this.at(i,j,nk)===EMPTY){
+                this.setN(n,EMPTY);this.set(i,j,nk,SEED);
+                moved[(i*ny+j)*nz+nk]=1;continue;
+              }
+            }
+            if(j===ground){
+              this.landed.push({i,k});
+              this.setN(n,EMPTY);continue;
+            }
+            const bl=j-1;
+            if(this.at(i,bl,k)===EMPTY){
+              this.setN(n,EMPTY);this.set(i,bl,k,SEED);
+              moved[(i*ny+bl)*nz+k]=1;
+            }
+            continue;
+          }
+
+          if(e===LITTER&&(age[n]++&1))continue;
+          if(e===FERT&&(age[n]++%3))continue;
+
+          if(j===ground){
+            if(e!==WATER){this.land(i,k,e);this.setN(n,EMPTY);continue;}
+            if(this.soil.headroom(i,k)>=DROP){
+              this.soil.deposit(i,k,'moisture',DROP);
+              this.soaked++;this.setN(n,EMPTY);continue;
+            }
+            if(this.rnd()<0.004){this.setN(n,EMPTY);continue;}
+            let ci=i,gone=false;
+            for(let hop=0;hop<3;hop++){
+              const ni=ci+SLOPE;
+              if(ni>=nx){this.runoff++;this.set(ci,j,k,EMPTY);gone=true;break;}
+              if(this.at(ni,j,k)!==EMPTY)break;
+              this.set(ci,j,k,EMPTY);this.set(ni,j,k,WATER);
+              moved[(ni*ny+j)*nz+k]=1;ci=ni;
+            }
+            if(gone||ci!==i)continue;
+            const ni=i-SLOPE;
+            if(ni>=0&&this.at(ni,j,k)===EMPTY){
+              this.set(i,j,k,EMPTY);this.set(ni,j,k,WATER);moved[(ni*ny+j)*nz+k]=1;
+            }
+            continue;
+          }
+
+          const below=j-1;
+          if(this.at(i,below,k)===EMPTY){
+            this.setN(n,EMPTY);this.set(i,below,k,e);
+            moved[(i*ny+below)*nz+k]=1;continue;
+          }
+          const r0=(this.rnd()*4)|0;
+          let done=false;
+          for(let d=0;d<4;d++){
+            const t=(r0+d)&3, ni=i+DX[t], nk=k+DZ[t];
+            if(ni<0||ni>=nx||nk<0||nk>=nz)continue;
+            if(this.at(ni,below,nk)===EMPTY){
+              this.setN(n,EMPTY);this.set(ni,below,nk,e);
+              moved[(ni*ny+below)*nz+nk]=1;done=true;break;
+            }
+          }
+          if(done||e!==WATER)continue;
+          if(this.rnd()<0.004){this.setN(n,EMPTY);continue;}
+          if(j-ground>=POND_MAX){this.runoff++;this.setN(n,EMPTY);continue;}
+          for(let d=0;d<4;d++){
+            const t=(r0+d)&3, ni=i+DX[t], nk=k+DZ[t];
+            if(ni>=nx){this.runoff++;this.setN(n,EMPTY);break;}
+            if(ni<0||nk<0||nk>=nz)continue;
+            if(this.at(ni,j,nk)===EMPTY){
+              this.setN(n,EMPTY);this.set(ni,j,nk,WATER);
+              moved[(ni*ny+j)*nz+nk]=1;break;
+            }
+          }
+        }
+      }
+    }
+  }
+  land(i,k,e){
+    if(e===LITTER)this.soil.deposit(i,k,'organic',0.30);
+    else if(e===FERT){
+      this.soil.deposit(i,k,'nitrogen',0.40);
+      this.soil.deposit(i,k,'ammonium',0.32);
+    }
+  }
+}
+
+/* -------------------- dandelions --------------------
+   The first plant in the system. Each one is a rosette of leaves, a
+   stem, a flower that becomes a seed head, and a taproot written into
+   the same root array the pasture roots use -- so a dandelion feeds
+   the soil the moment it takes, through the exudation path that
+   already exists. Growth draws real moisture and nitrogen out of the
+   taproot cells; a plant that cannot feed dies, and its root decays to
+   organic matter where it stood. */
+const ROSETTE=0, FLOWERING=1, SEEDHEAD=2, BARE=3;
+const STAGE_LEN=[220,320,0,170];
+const MAX_PLANTS=24;
+
+class Plants{
+  constructor(soil,sky){this.soil=soil;this.sky=sky;this.list=[];}
+
+  add(i,k,preAge){
+    if(this.list.length>=MAX_PLANTS)return false;
+    const g=this.soil.ground;
+    i=Math.max(1,Math.min(this.soil.nx-2,i));
+    k=Math.max(1,Math.min(this.soil.nz-2,k));
+    for(const p of this.list)
+      if(Math.abs(p.i-i)<4&&Math.abs(p.k-k)<4)return false;
+    const d={i,k,stage:ROSETTE,t:preAge||0,cells:[],roots:[],
+             starve:0,seedsLeft:0,dead:false};
+    let x=i,z=k,s=((i*73+k*151+29)>>>0)||7;
+    const rnd=()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296;};
+    for(let dep=0;dep<14;dep++){
+      const j=g-1-dep; if(j<0)break;
+      if(rnd()<0.25)x=Math.max(0,Math.min(this.soil.nx-1,x+(rnd()<0.5?-1:1)));
+      if(rnd()<0.25)z=Math.max(0,Math.min(this.soil.nz-1,z+(rnd()<0.5?-1:1)));
+      const p=(x*this.soil.ny+j)*this.soil.nz+z;
+      const v=Math.max(0.3,1-dep/16);
+      if(this.soil.root[p]<v){
+        d.roots.push({p,prev:this.soil.root[p]});
+        this.soil.root[p]=v;
+      }
+    }
+    this.list.push(d);
+    this.draw(d);
+    return true;
+  }
+
+  clearCells(d){
+    for(const n of d.cells)if(this.sky.cell[n]>=STEM)this.sky.setN(n,EMPTY);
+    d.cells=[];
+  }
+
+  draw(d){
+    this.clearCells(d);
+    const {nx,ny,nz}=this.soil, g=this.soil.ground;
+    const put=(i,j,k,v)=>{
+      if(i<0||i>=nx||j<g||j>=ny||k<0||k>=nz)return;
+      const n=(i*ny+j)*nz+k;
+      this.sky.setN(n,v);
+      d.cells.push(n);
+    };
+    put(d.i,g,d.k,STEM);
+    put(d.i+1,g,d.k,LEAF);put(d.i-1,g,d.k,LEAF);
+    put(d.i,g,d.k+1,LEAF);put(d.i,g,d.k-1,LEAF);
+    if(d.stage!==ROSETTE){
+      put(d.i,g+1,d.k,STEM);put(d.i,g+2,d.k,STEM);put(d.i,g+3,d.k,STEM);
+      if(d.stage===FLOWERING)put(d.i,g+4,d.k,FLOWER);
+      else if(d.stage===SEEDHEAD){
+        put(d.i,g+4,d.k,PUFF);
+        put(d.i+1,g+4,d.k,PUFF);put(d.i-1,g+4,d.k,PUFF);
+        put(d.i,g+4,d.k+1,PUFF);put(d.i,g+4,d.k-1,PUFF);
+        put(d.i,g+5,d.k,PUFF);
+      }
+    }
+  }
+
+  kill(d){
+    this.clearCells(d);
+    for(const r of d.roots){
+      this.soil.root[r.p]=r.prev;
+      this.soil.a.organic[r.p]=clamp01(this.soil.a.organic[r.p]+0.08);
+    }
+    d.dead=true;
+  }
+
+  step(){
+    const M=this.soil.a.moisture, N=this.soil.a.nitrogen;
+    const g=this.soil.ground;
+    let removed=false;
+    for(const d of this.list){
+      let mGot=0,nGot=0;
+      for(const r of d.roots){
+        const tm=Math.min(M[r.p],0.0025); M[r.p]-=tm; mGot+=tm;
+        const tn=Math.min(N[r.p],0.0009); N[r.p]-=tn; nGot+=tn;
+      }
+      const fed=mGot>0.006&&nGot>0.0022;
+      const daylight=this.soil.sun>0.03;
+      if(fed){d.starve=Math.max(0,d.starve-2);if(daylight)d.t++;}
+      else d.starve++;
+      if(d.starve>140){this.kill(d);removed=true;continue;}
+
+      if(d.stage===ROSETTE&&d.t>STAGE_LEN[ROSETTE]){
+        d.stage=FLOWERING;d.t=0;this.draw(d);
+      }else if(d.stage===FLOWERING&&d.t>STAGE_LEN[FLOWERING]){
+        d.stage=SEEDHEAD;d.t=0;d.seedsLeft=16;this.draw(d);
+      }else if(d.stage===SEEDHEAD){
+        if(d.seedsLeft>0&&fed&&daylight&&d.t%7===0){
+          const n=(d.i*this.soil.ny+(g+6))*this.soil.nz+d.k;
+          if(g+6<this.soil.ny&&this.sky.cell[n]===EMPTY){
+            this.sky.setN(n,SEED);d.seedsLeft--;
+          }
+        }
+        if(daylight)d.t++;
+        if(d.seedsLeft<=0){d.stage=BARE;d.t=0;this.draw(d);}
+      }else if(d.stage===BARE&&d.t>STAGE_LEN[BARE]){
+        d.stage=FLOWERING;d.t=0;this.draw(d);
+      }
+    }
+    if(removed)this.list=this.list.filter(d=>!d.dead);
+  }
+}
+
+/* -------------------- shared display data -------------------- */
+const ELEMENTS=[
+  ['root',      [226,206,150],'living root'],
+  ['mycelium',  [216,244,232],'fungal hyphae'],
+  ['microbes',  [232,164,52], 'bacterial colony'],
+  ['humus',     [124,78,40],  'decayed matter'],
+  ['sugars',    [230,214,110],'root carbon'],
+  ['nitrate',   [110,206,96], 'plant-available N'],
+  ['wet soil',  [58,110,168], 'water in the pores'],
+  ['mineral',   [92,88,80],   'bare grains'],
+];
+const AIR_ELEMENTS=[
+  ['rain',      [74,163,232], 'falling'],
+  ['standing',  [36,96,158],  'refused at the surface'],
+  ['litter',    [172,112,46], 'leaf fall'],
+  ['fertiliser',[206,198,240],'applied pellet'],
+  ['spore',     [236,248,240],'fungal fruiting'],
+  ['seed',      [228,228,212],'on the wind'],
+  ['dandelion', [110,178,66], 'stem and leaves'],
+  ['flower',    [252,206,44], 'in bloom'],
+  ['seed head', [240,244,238],'gone to seed'],
+];
+const C_RAIN=[74,163,232], C_POND=[36,96,158], C_LITTER=[172,112,46],
+      C_FERT=[206,198,240], C_SPORE=[236,248,240], C_SEED=[228,228,212],
+      C_STEM=[110,178,66], C_LEAF=[84,150,54], C_FLOWER=[252,206,44],
+      C_PUFF=[240,244,238];
+const FIELDCOL={fungi:[216,244,232],moisture:[64,150,224],organic:[150,96,46],
+                nitrogen:[110,206,96],carbon:[230,214,110],bacteria:[232,164,52]};
+const VIEWS=[['elements','Elements'],['fungi','Fungi'],['moisture','Water'],
+             ['organic','Humus'],['carbon','Carbon'],['nitrogen','Nitrogen']];
+const EL_WEIGHT=[3.0, 2.1, 1.7, 1.3, 1.9, 1.0, 0.62, 0.50];
+
+/* -------------------- the whole simulation as one object -------------- */
+function createSim(){
+  const N=NX*NY*NZ, SXp=NY*NZ, SYp=NZ;
+
+  const grain=new Float32Array(N);
+  {let s=7;for(let n=0;n<N;n++){
+    s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;grain[n]=s/4294967296;}}
+
+  const worlds={
+    R:{soil:new SoilWorld(NX,NY,NZ),occ:new Uint8Array(N),
+       recipe:{litter:0.0048,seed:11,exud:0.42,
+               roots:{count:96,thick:1.0,depth:40,drift:0.45,branch:0.08}}},
+    S:{soil:new SoilWorld(NX,NY,NZ),occ:new Uint8Array(N),
+       recipe:{litter:0.0,seed:23,exud:0.30,
+               roots:{count:60,thick:0.55,depth:11,drift:0.35,branch:0.05}}}
+  };
+  const packR=new Uint8Array(N*4), packS=new Uint8Array(N*4);
+  let view='elements', opacity=0.55, openness=0.78;
+  let weather=0, day=0, wSeed=12345, storm=0, stormLeft=0, spreading=false, wind=0, sun=0;
+  function wrnd(){wSeed^=wSeed<<13;wSeed>>>=0;wSeed^=wSeed>>17;wSeed^=wSeed<<5;wSeed>>>=0;
+    return wSeed/4294967296;}
+
+  function reset(){
+    worlds.R.soil.fill('REGENERATIVE',7);
+    worlds.S.soil.fill('SYNTHETIC',7);
+    for(const key of ['R','S']){
+      const o=worlds[key];
+      o.soil.exudation=o.recipe.exud;
+      o.soil.growRoots(o.recipe.roots,key==='R'?5:9);
+      o.sky=new Sky(o.soil,o.recipe);
+      o.plants=new Plants(o.soil,o.sky);
+    }
+    worlds.R.plants.add((NX*0.2)|0,0,(NZ*0.6)|0);
+    worlds.R.plants.add((NX*0.6)|0,0,(NZ*0.7)|0);
+    const ok3=worlds.R.plants.add((NX*0.78)|0,0,(NZ*0.22)|0);
+    if(ok3){const d=worlds.R.plants.list[worlds.R.plants.list.length-1];
+      d.stage=SEEDHEAD;d.seedsLeft=12;worlds.R.plants.draw(d);}
+    weather=0;day=0;storm=0;stormLeft=0;wSeed=12345;wind=0;spreading=false;
+  }
+
+  /* One step, expressed as a list of small closures. The worker runs the
+     whole list at once; the inline fallback runs a few per frame so no
+     single frame stalls. Same order either way, so the results match. */
+  const CH_I=16, CH_J=8;
+  function weatherUnit(){
+    const t=worlds.R.soil.tick;
+    const season=0.5+0.5*Math.sin(t/900*Math.PI*2);
+    if(stormLeft>0){stormLeft--;storm=Math.min(1,storm+0.08);}
+    else{storm=Math.max(0,storm-0.02);
+         if(wrnd()<0.0022+0.004*season)stormLeft=40+((wrnd()*90)|0);}
+    weather=clamp01(0.05*season+storm*0.95);
+    day=Math.floor(t/24);
+    wind+=(wrnd()-0.5)*0.06; wind*=0.999;
+    if(wrnd()<0.003)wind=(wrnd()<0.5?-1:1)*(0.7+0.3*wrnd());
+    wind=Math.max(-1,Math.min(1,wind));
+    const autumn=0.5+0.5*Math.sin(t/900*Math.PI*2-1.9);
+    worlds.R.sky.litterScale=0.25+2.2*autumn*autumn;
+    spreading=(t%430)<16;
+    worlds.S.sky.fertRate=spreading?0.11:0;
+    sun=sunState(t).amt;
+    worlds.R.soil.sun=sun; worlds.S.soil.sun=sun;
+  }
+  function couplingUnit(){
+    for(const key of ['R','S']){
+      const o=worlds[key];
+      for(const {i,k} of o.sky.landed){
+        const wet=o.soil.a.moisture[o.soil.idx(i,GROUND-1,k)]>0.035
+          || o.sky.at(i,GROUND,k)===WATER
+          || (i>0&&o.sky.at(i-1,GROUND,k)===WATER)
+          || (i+1<NX&&o.sky.at(i+1,GROUND,k)===WATER);
+        if(wet&&wrnd()<0.4)o.plants.add(i,k,0);
+        else o.soil.deposit(i,k,'organic',0.01);
+      }
+      o.sky.landed.length=0;
+    }
+    for(const sd of worlds.R.sky.exitSeeds)
+      if(sd.side>0&&worlds.S.sky.at(0,sd.j,sd.k)===EMPTY)
+        worlds.S.sky.set(0,sd.j,sd.k,SEED);
+    for(const sd of worlds.S.sky.exitSeeds)
+      if(sd.side<0&&worlds.R.sky.at(NX-1,sd.j,sd.k)===EMPTY)
+        worlds.R.sky.set(NX-1,sd.j,sd.k,SEED);
+    worlds.R.sky.exitSeeds.length=0;
+    worlds.S.sky.exitSeeds.length=0;
+  }
+  function stepUnits(){
+    const u=[weatherUnit];
+    for(const key of ['R','S']){
+      const o=worlds[key];
+      u.push(()=>o.sky.stepBegin(weather));
+      for(let j=GROUND;j<NY;j+=CH_J){
+        const a2=j, b2=Math.min(j+CH_J,NY);
+        u.push(()=>o.sky.stepRows(a2,b2,wind));
+      }
+      u.push(()=>o.plants.step());
+      for(let i=0;i<NX;i+=CH_I){
+        const a2=i, b2=Math.min(i+CH_I,NX);
+        u.push(()=>o.soil.microbesRange(a2,b2));
+      }
+      for(let i=0;i<NX;i+=CH_I){
+        const a2=i, b2=Math.min(i+CH_I,NX);
+        u.push(()=>o.soil.computeFluxRange(a2,b2));
+      }
+      for(let i=0;i<NX;i+=CH_I){
+        const a2=i, b2=Math.min(i+CH_I,NX);
+        u.push(()=>o.soil.computeScalesRange(a2,b2));
+      }
+      for(let i=0;i<NX;i+=CH_I){
+        const a2=i, b2=Math.min(i+CH_I,NX);
+        u.push(()=>o.soil.applyFluxRange(a2,b2));
+      }
+      u.push(()=>o.soil.finishStep());
+    }
+    u.push(couplingUnit);
+    return u;
+  }
+  function step(){for(const f of stepUnits())f();}
+
+  /* classify each cell into an RGBA texel. Alpha falls with crowding, so
+     a solid mass goes see-through while an isolated cube stays near
+     solid. The buffer is laid out exactly like the soil arrays (z
+     fastest) and the texture's dimensions are permuted to match, so
+     packing runs in array order. airOnly skips the soil rows: the soil
+     changes slowly and is repacked every fourth step. */
+  function occRange(o,airOnly,i0,i1){
+    const {soil,sky,occ}=o, a=soil.a;
+    const fieldMode=view!=='elements';
+    for(let i=i0;i<i1;i++){
+      const base=i*NY*NZ;
+      if(!airOnly){
+        if(!fieldMode)occ.fill(1,base,base+GROUND*NZ);
+        else{
+          const V=a[view];
+          for(let n=base;n<base+GROUND*NZ;n++)occ[n]=V[n]>0.02?1:0;
+        }
+      }
+      for(let n=base+GROUND*NZ;n<base+NY*NZ;n++)occ[n]=sky.cell[n]?1:0;
+    }
+  }
+  function colourRange(o,out,airOnly,i0,i1){
+    const {soil,sky,occ}=o, a=soil.a, sc=new Float32Array(8);
+    const fieldMode=view!=='elements';
+    const fc=FIELDCOL[view]||[200,200,200];
+    const j0=airOnly?GROUND:0;
+    /* the speckle pattern advances with the soil repack, so microbial
+       activity reads as points that shift rather than a fixed stipple */
+    const shim=((soil.tick>>2)*7919)>>>0, G=grain.length;
+    const flowerCol=[
+      C_FLOWER[0]*sun+96*(1-sun),
+      C_FLOWER[1]*sun+150*(1-sun),
+      C_FLOWER[2]*sun+60*(1-sun)];
+    for(let i=i0;i<i1;i++)for(let j=j0;j<NY;j++){
+      const air=j>=GROUND;
+      let p=(i*NY+j)*NZ;
+      for(let k=0;k<NZ;k++,p++){
+        const t=p*4;
+        if(!occ[p]){out[t]=0;out[t+1]=0;out[t+2]=0;out[t+3]=0;continue;}
+        let near=1, seen=1;
+        if(i>0){near+=occ[p-SXp];seen++;} if(i+1<NX){near+=occ[p+SXp];seen++;}
+        if(j>0){near+=occ[p-SYp];seen++;} if(j+1<NY){near+=occ[p+SYp];seen++;}
+        if(k>0){near+=occ[p-1]; seen++;}  if(k+1<NZ){near+=occ[p+1]; seen++;}
+        const crowd=near/seen;
+        let r,g,b,w;
+        if(air){
+          const e=sky.cell[p];
+          let c;
+          if(e===WATER)c=sky.moved[p]?C_RAIN:C_POND;
+          else if(e===LITTER)c=C_LITTER;
+          else if(e===FERT)c=C_FERT;
+          else if(e===SPORE)c=C_SPORE;
+          else if(e===SEED)c=C_SEED;
+          else if(e===STEM)c=C_STEM;
+          else if(e===LEAF)c=C_LEAF;
+          else if(e===FLOWER)c=flowerCol;
+          else c=C_PUFF;
+          r=c[0];g=c[1];b=c[2];
+          w = e===WATER?0.9 : e===FLOWER?2.4 : e>=STEM?1.8 : e===SEED?1.3 : 1.25;
+        }else if(fieldMode){
+          r=fc[0];g=fc[1];b=fc[2];
+          w=Math.pow(a[view][p],1.2)*2.6;
+        }else{
+          const fu=a.fungi[p],ba=a.bacteria[p],om=a.organic[p],ca=a.carbon[p],
+                ni=a.nitrogen[p],mo=a.moisture[p],pe=a.permeability[p];
+          const cap=pe*.5+fu*.5;
+          sc[0]=soil.root[p]>0.1?9.0:0.0;
+          sc[1]=fu*2.2; sc[2]=ba*2.0; sc[3]=om*2.0; sc[4]=ca*2.4;
+          sc[5]=ni*0.85; sc[6]=(cap<=0?0:mo/cap)*0.60; sc[7]=0.26;
+          let i1=0,v1=-1,i2=0,v2=-1;
+          for(let e=0;e<8;e++){
+            if(sc[e]>v1){v2=v1;i2=i1;v1=sc[e];i1=e;}
+            else if(sc[e]>v2){v2=sc[e];i2=e;}
+          }
+          let pick=grain[p]<(v1>0?v2/v1:0)*0.55?i2:i1;
+          /* living speckle: where bacteria are dense, some cells show as
+             microbes this repack -- how many is set by the field itself */
+          if(pick!==0&&ba>0.07){
+            const hh=grain[(p+shim)%G];
+            if(hh<Math.min(ba*0.4,0.14))pick=2;
+          }
+          const c=ELEMENTS[pick][1];
+          const sh=pick===2?0.55+0.45*grain[(p+shim+1)%G]
+                           :0.50+0.50*(v1<1?v1:1);
+          r=c[0]*sh;g=c[1]*sh;b=c[2]*sh;
+          w=EL_WEIGHT[pick];
+        }
+        let al=opacity*w*(1-openness*crowd);
+        al=al<0.012?0.012:al>1?1:al;
+        out[t]=r;out[t+1]=g;out[t+2]=b;out[t+3]=al*255;
+      }
+    }
+  }
+  function packOne(o,out,airOnly){
+    occRange(o,airOnly,0,NX);
+    colourRange(o,out,airOnly,0,NX);
+  }
+  function packUnits(bufR,bufS,airOnly){
+    const u=[];
+    for(const key of ['R','S']){
+      const o=worlds[key], mine=key==='R'?packR:packS, dst=key==='R'?bufR:bufS;
+      for(let i=0;i<NX;i+=CH_I){
+        const a2=i,b2=Math.min(i+CH_I,NX);
+        u.push(()=>occRange(o,airOnly,a2,b2));
+      }
+      for(let i=0;i<NX;i+=CH_I){
+        const a2=i,b2=Math.min(i+CH_I,NX);
+        u.push(()=>colourRange(o,mine,airOnly,a2,b2));
+      }
+      u.push(()=>dst.set(mine));
+    }
+    return u;
+  }
+
+  function snapshot(){
+    const metric=view==='elements'?'fungi':view;
+    const per=(key)=>{
+      const o=worlds[key], tot=o.sky.soaked+o.sky.runoff;
+      return {soaked:o.sky.soaked, runoff:o.sky.runoff,
+              shed:tot>200?o.sky.runoff/tot:0,
+              fungi:o.soil.mean('fungi'),
+              metric:o.soil.mean(metric),
+              plants:o.plants.list.length};
+    };
+    return {tick:worlds.R.soil.tick, day, weather, wind, spreading, sun,
+            R:per('R'), S:per('S')};
+  }
+
+  return {
+    reset, step, snapshot, stepUnits, packUnits,
+    packInto(bufR,bufS,airOnly){
+      packOne(worlds.R,packR,airOnly);
+      packOne(worlds.S,packS,airOnly);
+      bufR.set(packR); bufS.set(packS);
+    },
+    setView(v){view=v;},
+    setLook(op,ok){opacity=op;openness=ok;},
+    worlds
+  };
+}
+/*SIM-END*/
+
+/* the worker body: stringified into the blob after the sim slice */
+function workerMain(){
+  const sim=createSim();
+  sim.reset();
+  const N4=NX*NY*NZ*4;
+  let running=true, interval=64, timer=null, stepN=0;
+  const pool=[];
+  function frameOut(full,stepMs){
+    let bufs=pool.pop();
+    if(!bufs)bufs=[new Uint8Array(N4),new Uint8Array(N4)];
+    sim.packInto(bufs[0],bufs[1],!full);
+    self.postMessage({type:'frame',r:bufs[0].buffer,s:bufs[1].buffer,
+      stats:sim.snapshot(),stepMs:stepMs||0},[bufs[0].buffer,bufs[1].buffer]);
+  }
+  function loop(){
+    if(!running){timer=null;return;}
+    const t0=Date.now();
+    sim.step();stepN++;
+    frameOut((stepN&3)===0,Date.now()-t0);
+    timer=setTimeout(loop,Math.max(0,interval-(Date.now()-t0)));
+  }
+  self.onmessage=(e)=>{
+    const m=e.data;
+    if(m.cmd==='recycle'){
+      if(pool.length<3)pool.push([new Uint8Array(m.r),new Uint8Array(m.s)]);
+    }
+    else if(m.cmd==='start'){frameOut(true,0);if(running&&!timer)loop();}
+    else if(m.cmd==='play'){if(!running){running=true;if(!timer)loop();}}
+    else if(m.cmd==='pause'){running=false;}
+    else if(m.cmd==='speed'){interval=m.v;}
+    else if(m.cmd==='reset'){sim.reset();stepN=0;frameOut(true,0);}
+    else if(m.cmd==='view'){sim.setView(m.v);frameOut(true,0);}
+    else if(m.cmd==='look'){sim.setLook(m.op,m.ok);frameOut(true,0);}
+  };
+}
+
+/* ===================================================================
+   Main thread: WebGL raymarcher, controls, and an engine that prefers
+   a Web Worker but falls back to running the simulation inline.
+   =================================================================== */
+const BUILD=13;
+const cv=document.getElementById('gl');
+cv.width=880; cv.height=440;
+let gl=null, prog=null, U={}, texR=null, texS=null, glOK=false;
+let view='elements', opacity=0.55, openness=0.78, gap=0.20;
+let running=true, speed=1;
+const hist={R:[],S:[]};
+let lastStats=null, lastHistTick=-1;
+
+const VS=`#version 300 es
+void main(){
+  vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);
+  gl_Position=vec4(p*2.0-1.0,0.0,1.0);
+}`;
+const FS=`#version 300 es
+precision highp float;
+precision highp sampler3D;
+uniform sampler3D uVol;
+uniform vec3 uDim;
+uniform vec2 uRes;
+uniform vec2 uOrigin;
+uniform vec3 uRight,uUp,uFwd;
+uniform float uScale;
+uniform float uGap;
+uniform vec3 uSunDir;
+uniform float uSunAmt;
+uniform vec3 uLightCol;
+uniform vec3 uSky;
+uniform vec2 uSunUV;
+uniform float uSunVis;
+out vec4 frag;
+
+void main(){
+  vec2 uv=((gl_FragCoord.xy-uOrigin)*2.0-uRes)/uRes.y;
+  vec2 dsu=uv-uSunUV;
+  vec3 sky=uSky+vec3(1.0,0.70,0.34)*(uSunVis*exp(-dot(dsu,dsu)*34.0));
+  vec3 c=uDim*0.5;
+  vec3 ro=c+uRight*uv.x*uScale+uUp*uv.y*uScale-uFwd*(uScale*4.0);
+  vec3 rd=uFwd;
+  vec3 s=vec3(abs(rd.x)<1e-5?1e-5:rd.x,
+              abs(rd.y)<1e-5?1e-5:rd.y,
+              abs(rd.z)<1e-5?1e-5:rd.z);
+  vec3 inv=1.0/s;
+  vec3 t0=(vec3(0.0)-ro)*inv, t1=(uDim-ro)*inv;
+  vec3 tn=min(t0,t1), tf=max(t0,t1);
+  float tmin=max(max(tn.x,tn.y),tn.z);
+  float tmax=min(min(tf.x,tf.y),tf.z);
+  if(tmax<=max(tmin,0.0)){frag=vec4(sky,1.0);return;}
+  vec3 p=ro+s*(max(tmin,0.0)+1e-4);
+  ivec3 v=ivec3(floor(p));
+  ivec3 st=ivec3(s.x>0.0?1:-1, s.y>0.0?1:-1, s.z>0.0?1:-1);
+  vec3 dt=abs(inv);
+  vec3 nx;
+  nx.x=(s.x>0.0?(float(v.x+1)-p.x):(p.x-float(v.x)))*dt.x;
+  nx.y=(s.y>0.0?(float(v.y+1)-p.y):(p.y-float(v.y)))*dt.y;
+  nx.z=(s.z>0.0?(float(v.z+1)-p.z):(p.z-float(v.z)))*dt.z;
+  ivec3 dim=ivec3(uDim);
+  float g=uGap*0.5;
+  vec4 acc=vec4(0.0);
+  for(int n=0;n<340;n++){
+    if(v.x<0||v.y<0||v.z<0||v.x>=dim.x||v.y>=dim.y||v.z>=dim.z)break;
+    vec4 sm=texelFetch(uVol,v,0);
+    if(sm.a>0.0){
+      vec3 lo=vec3(v)+g, hi=vec3(v)+1.0-g;
+      vec3 a0=(lo-ro)*inv, a1=(hi-ro)*inv;
+      vec3 en=min(a0,a1), ex=max(a0,a1);
+      float e0=max(max(en.x,en.y),en.z);
+      float e1=min(min(ex.x,ex.y),ex.z);
+      if(e1>max(e0,0.0)){
+        /* the entering face's normal, lit by the sun */
+        vec3 nrm = (e0==en.y) ? vec3(0.0,-float(st.y),0.0)
+                 : (e0==en.x) ? vec3(-float(st.x),0.0,0.0)
+                              : vec3(0.0,0.0,-float(st.z));
+        float dif=max(dot(nrm,uSunDir),0.0);
+        float sh=0.30+0.14*uSunAmt+0.80*dif*(0.12+0.88*uSunAmt);
+        acc.rgb += (1.0-acc.a)*sm.a*sm.rgb*sh;
+        acc.a   += (1.0-acc.a)*sm.a;
+        if(acc.a>0.995)break;
+      }
+    }
+    if(nx.x<nx.y&&nx.x<nx.z){v.x+=st.x;nx.x+=dt.x;}
+    else if(nx.y<nx.z){v.y+=st.y;nx.y+=dt.y;}
+    else{v.z+=st.z;nx.z+=dt.z;}
+  }
+  frag=vec4(acc.rgb*uLightCol+(1.0-acc.a)*sky,1.0);
+}`;
+
+function compile(type,src){
+  const s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function makeTex(){
+  const t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D,t);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
+  gl.texStorage3D(gl.TEXTURE_3D,1,gl.RGBA8,NZ,NY,NX);
+  return t;
+}
+function initGL(){
+  gl=cv.getContext('webgl2',{antialias:false,depth:false,alpha:false});
+  if(!gl)return false;
+  prog=gl.createProgram();
+  gl.attachShader(prog,compile(gl.VERTEX_SHADER,VS));
+  gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,FS));
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog,gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  for(const n of ['uVol','uDim','uRes','uOrigin','uRight','uUp','uFwd','uScale','uGap',
+                  'uSunDir','uSunAmt','uLightCol','uSky','uSunUV','uSunVis'])
+    U[n]=gl.getUniformLocation(prog,n);
+  gl.bindVertexArray(gl.createVertexArray());
+  texR=makeTex(); texS=makeTex();
+  gl.uniform3f(U.uDim,NZ,NY,NX);
+  gl.uniform1i(U.uVol,0);
+  gl.activeTexture(gl.TEXTURE0);
+  return true;
+}
+
+let az=0.72, el=0.52, drag=null, idle=0;
+function render(){
+  if(!glOK)return;
+  const W=cv.width, H=cv.height, half=W>>1;
+  const ca=Math.cos(az), sa=Math.sin(az), ce=Math.cos(el), se=Math.sin(el);
+  const fwd=[-sa*ce,-se,-ca*ce];
+  const right=[ca,0,-sa];
+  const up=[-sa*se,ce,-ca*se];
+  /* the sun glides between steps: extrapolate the tick from the step rate */
+  const base=lastStats?lastStats.tick:0;
+  const frac=(running&&simRate&&lastTickAt)
+    ? Math.min(1,(performance.now()-lastTickAt)/(1000/Math.max(simRate,0.01))):0;
+  const ss=sunState(base+frac);
+  const amt=ss.amt, dir=ss.dir;
+  const warm=amt*(1-amt)*2.2;
+  const lc=[0.62+0.40*amt+0.16*warm, 0.66+0.34*amt+0.04*warm, 0.80+0.20*amt-0.10*warm];
+  const skyC=[0.022+0.030*amt+0.028*warm, 0.026+0.034*amt+0.010*warm, 0.033+0.048*amt];
+  const su=dir[0]*right[0]+dir[1]*right[1]+dir[2]*right[2];
+  const sv=dir[0]*up[0]+dir[1]*up[1]+dir[2]*up[2];
+  const sw=dir[0]*fwd[0]+dir[1]*fwd[1]+dir[2]*fwd[2];
+  const vis=amt*Math.max(0,Math.min(1,(sw-0.05)/0.25));
+  gl.viewport(0,0,W,H);
+  gl.uniform2f(U.uRes,half,H);
+  gl.uniform3fv(U.uRight,right);
+  gl.uniform3fv(U.uUp,up);
+  gl.uniform3fv(U.uFwd,fwd);
+  gl.uniform1f(U.uScale,NY*1.06);
+  gl.uniform1f(U.uGap,gap);
+  gl.uniform3fv(U.uSunDir,dir);
+  gl.uniform1f(U.uSunAmt,amt);
+  gl.uniform3fv(U.uLightCol,lc);
+  gl.uniform3fv(U.uSky,skyC);
+  gl.uniform2f(U.uSunUV,su*1.35,sv*1.35);
+  gl.uniform1f(U.uSunVis,vis);
+  gl.bindTexture(gl.TEXTURE_3D,texR);
+  gl.viewport(0,0,half,H);
+  gl.uniform2f(U.uOrigin,0,0);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.bindTexture(gl.TEXTURE_3D,texS);
+  gl.viewport(half,0,half,H);
+  gl.uniform2f(U.uOrigin,half,0);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+function uploadTex(bufR,bufS){
+  gl.bindTexture(gl.TEXTURE_3D,texR);
+  gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,NZ,NY,NX,gl.RGBA,gl.UNSIGNED_BYTE,bufR);
+  gl.bindTexture(gl.TEXTURE_3D,texS);
+  gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,NZ,NY,NX,gl.RGBA,gl.UNSIGNED_BYTE,bufS);
+}
+
+/* ---- engine: worker if possible, inline otherwise ---- */
+let engine=null, simRate=0, lastFrameAt=0, engineMode='';
+let firstErr='', bootStage='script loaded', degraded=false, staleWarn=false;
+function diag(){
+  const el2=document.getElementById('diag');
+  if(!el2)return;
+  el2.textContent='build '+BUILD+' · '+bootStage+
+    ' · webgl2 '+(glOK?'ok':'not yet')+
+    ' · engine '+(engineMode||'starting')+
+    ' · step '+(lastStats?lastStats.tick:0)+
+    (degraded?' · reduced to '+NX+'\u00d7'+NY+'\u00d7'+NZ+' for this device':'')+
+    (firstErr?' · first error: '+firstErr:'');
+}
+let lastTickAt=0;
+function onFrame(bufR,bufS,stats,stepMs,recycle){
+  uploadTex(bufR,bufS);
+  if(recycle)recycle();
+  lastStats=stats;
+  if(staleWarn&&stats.tick>0){
+    staleWarn=false;
+    const el2=document.getElementById('errline');
+    if(el2)el2.style.display='none';
+  }
+  const now=performance.now();
+  if(lastFrameAt){const dt=now-lastFrameAt;
+    simRate=simRate?simRate*0.8+(1000/dt)*0.2:1000/dt;}
+  lastFrameAt=now;lastTickAt=now;
+  if(stats.tick!==lastHistTick&&stats.tick%3===0){
+    lastHistTick=stats.tick;
+    hist.R.push(stats.R.metric); hist.S.push(stats.S.metric);
+    if(hist.R.length>300){hist.R.shift();hist.S.shift();}
+  }
+  readouts();
+}
+function makeWorkerEngine(onFail){
+  const src=document.getElementById('app').textContent;
+  const a=src.indexOf('/*SIM-START*/'), b=src.indexOf('/*SIM-END*/');
+  if(a<0||b<0)throw new Error('markers missing');
+  const blob=new Blob(['"use strict";\n',src.slice(a,b),
+    '\n(',workerMain.toString(),')();'],{type:'text/javascript'});
+  const url=URL.createObjectURL(blob);
+  const w=new Worker(url);
+  let gotFrame=false, dead=false;
+  const die=(why)=>{
+    if(dead)return; dead=true;
+    window.__workerRefused=null;
+    try{w.terminate();}catch(_){}
+    URL.revokeObjectURL(url);
+    console.info('simulation running on-page (background thread unavailable here: '+why+')');
+    onFail();
+  };
+  window.__workerRefused=die;
+  /* a blob worker can be refused asynchronously (sandboxed pages,
+     some phones): no exception, just silence. The watchdog catches it. */
+  const watchdog=setTimeout(()=>{if(!gotFrame)die('no frames within 1.2 s');},1200);
+  w.onerror=(e)=>{
+    if(e&&e.preventDefault)e.preventDefault();
+    die((e&&e.message)||'worker error');
+    return true;
+  };
+  w.onmessage=(e)=>{
+    const m=e.data;
+    if(m.type!=='frame')return;
+    if(!gotFrame){gotFrame=true;clearTimeout(watchdog);window.__workerRefused=null;}
+    const r=new Uint8Array(m.r), sB=new Uint8Array(m.s);
+    onFrame(r,sB,m.stats,m.stepMs,
+      ()=>{if(!dead)w.postMessage({cmd:'recycle',r:m.r,s:m.s},[m.r,m.s]);});
+  };
+  w.postMessage({cmd:'start'});
+  engineMode='background';
+  return {
+    play(){w.postMessage({cmd:'play'});},
+    pause(){w.postMessage({cmd:'pause'});},
+    reset(){hist.R=[];hist.S=[];w.postMessage({cmd:'reset'});},
+    speed(v){w.postMessage({cmd:'speed',v:64/v});},
+    view(v){hist.R=[];hist.S=[];w.postMessage({cmd:'view',v});},
+    look(op,ok){w.postMessage({cmd:'look',op,ok});},
+    pump(){},
+  };
+}
+/* Inline fallback: the same simulation on this thread, but never more
+   than a few milliseconds of it per frame. A step is a queue of small
+   units; each frame works through the queue under a time budget, so the
+   rotation stays smooth while the soil advances underneath it. */
+function makeInlineEngine(){
+  let sim=null;
+  bootStage='allocating';diag();
+  try{
+    sim=createSim();
+  }catch(err){
+    /* the full size is a large allocation in one burst; some phones refuse
+       it. Half the cells again and say so, rather than dying silently. */
+    degraded=true;
+    NX=64;NY=60;NZ=64;GROUND=30;
+    bootStage='allocating (reduced)';diag();
+    sim=createSim();
+  }
+  bootStage='seeding';diag();
+  sim.reset();
+  bootStage='running';
+  const N4=NX*NY*NZ*4;
+  const bufR=new Uint8Array(N4), bufS=new Uint8Array(N4);
+  let queue=[], phase='idle', stepN=0, interval=64, lastDone=0;
+  const emitStats=()=>onFrame(bufR,bufS,sim.snapshot(),0,null);
+  const startPack=(full)=>{queue=sim.packUnits(bufR,bufS,!full);phase='pack';};
+  startPack(true);
+  engineMode='on-page';
+  return {
+    play(){}, pause(){},
+    reset(){hist.R=[];hist.S=[];sim.reset();stepN=0;startPack(true);},
+    speed(v){interval=64/v;},
+    view(v){hist.R=[];hist.S=[];sim.setView(v);startPack(true);},
+    look(op,ok){sim.setLook(op,ok);startPack(true);},
+    pump(now){
+      const budget=performance.now()+12;
+      while(performance.now()<budget){
+        if(!queue.length){
+          if(phase==='pack'){phase='idle';emitStats();}
+          if(!running)return;
+          if(now-lastDone<interval)return;
+          queue=sim.stepUnits();phase='step';
+        }
+        queue.shift()();
+        if(!queue.length&&phase==='step'){
+          stepN++;lastDone=now;
+          startPack((stepN&3)===0);
+        }
+      }
+    },
+  };
+}
+
+/* ---- controls ---- */
+function readouts(){
+  if(!lastStats)return;
+  const st=lastStats;
+  document.getElementById('tick').textContent=st.tick;
+  document.getElementById('day').textContent=st.day;
+  document.getElementById('sps').textContent=
+    (simRate?simRate.toFixed(1)+' steps/s':'—')+(engineMode?' · '+engineMode:'');
+  document.getElementById('skyBar').style.right=(100-st.weather*100).toFixed(1)+'%';
+  document.getElementById('skyState').textContent=
+    st.weather<0.06?'clear':st.weather<0.3?'drizzle':st.weather<0.65?'rain':'downpour';
+  document.getElementById('windLbl').textContent=
+    'wind '+(st.wind<0?'\u2190':'\u2192')+Math.abs(st.wind).toFixed(2);
+  document.getElementById('sunLbl').textContent=
+    st.sun>0?'sun '+st.sun.toFixed(2):'night';
+  document.getElementById('spreading').style.opacity=st.spreading?'1':'0.18';
+  for(const key of ['R','S']){
+    const o=st[key];
+    const el=document.getElementById('st'+key);
+    el.className=o.shed>0.35?'warn':'';
+    el.innerHTML=
+      `<span>soaked in <b>${o.soaked.toLocaleString()}</b></span>`+
+      `<span>ran off <b>${o.runoff.toLocaleString()}</b></span>`+
+      (o.soaked+o.runoff>200?`<span>shed <b>${(o.shed*100).toFixed(0)}%</b></span>`:'')+
+      `<span>fungi <b>${o.fungi.toFixed(3)}</b></span>`+
+      `<span>dandelions <b>${o.plants}</b></span>`;
+  }
+  const vn=VIEWS.find(v=>v[0]===view)[1];
+  document.getElementById('chTitle').textContent=
+    (view==='elements'?'Fungal matter':vn)+', averaged over the whole block';
+  diag();
+  drawChart();
+}
+function drawChart(){
+  const c=document.getElementById('chart');
+  const dpr=window.devicePixelRatio||1, W=c.clientWidth, H=c.clientHeight;
+  if(c.width!==Math.round(W*dpr)){c.width=Math.round(W*dpr);c.height=Math.round(H*dpr);}
+  const x=c.getContext('2d');
+  x.setTransform(dpr,0,0,dpr,0,0);
+  x.clearRect(0,0,W,H);
+  x.strokeStyle='#1a1c1f';x.lineWidth=1;
+  x.font='400 9px ui-monospace,monospace';x.fillStyle='#454a51';
+  for(let g2=0;g2<=4;g2++){
+    const y=Math.round(H-4-(g2/4)*(H-14))-.5;
+    x.beginPath();x.moveTo(28,y);x.lineTo(W,y);x.stroke();
+    x.fillText((g2/4).toFixed(2),2,y+3);
+  }
+  const plot=(arr,col)=>{
+    if(arr.length<2)return;
+    x.strokeStyle=col;x.lineWidth=1.4;x.beginPath();
+    for(let n=0;n<arr.length;n++){
+      const px=28+(n/299)*(W-30), py=H-4-clamp01(arr[n])*(H-14);
+      n?x.lineTo(px,py):x.moveTo(px,py);
+    }
+    x.stroke();
+  };
+  plot(hist.R,'#95c74e');plot(hist.S,'#a894dc');
+}
+
+document.getElementById('pal').innerHTML=
+  ELEMENTS.concat(AIR_ELEMENTS).map(([n,c,d])=>
+  `<span class="el"><i style="background:rgb(${c[0]},${c[1]},${c[2]})"></i>`+
+  `<b>${n}</b>&nbsp;<em>${d}</em></span>`).join('');
+const vb=document.getElementById('views');
+for(const [id,label] of VIEWS){
+  const b=document.createElement('button');
+  b.textContent=label;b.type='button';b.dataset.v=id;
+  if(id===view)b.classList.add('on');
+  b.onclick=()=>{view=id;
+    [...vb.children].forEach(c=>c.classList.toggle('on',c.dataset.v===id));
+    engine.view(id);};
+  vb.appendChild(b);
+}
+const playBtn=document.getElementById('play');
+playBtn.onclick=()=>{running=!running;
+  playBtn.textContent=running?'Pause':'Play';
+  playBtn.classList.toggle('on',running);
+  running?engine.play():engine.pause();};
+document.getElementById('reset').onclick=()=>engine.reset();
+const spd=document.getElementById('spd');
+spd.oninput=()=>{speed=+spd.value;
+  document.getElementById('spdV').textContent=speed+'×';
+  engine.speed(speed);};
+
+const knob=(id,out,set,fmt,after)=>{
+  const el2=document.getElementById(id);
+  el2.oninput=()=>{const v=set(+el2.value);
+    document.getElementById(out).textContent=fmt(v);
+    after();};
+};
+knob('op','opV',v=>opacity=v/100,v=>v.toFixed(2),
+  ()=>engine.look(opacity,openness));
+knob('ok','okV',v=>openness=v/100,v=>v.toFixed(2),
+  ()=>engine.look(opacity,openness));
+knob('gp','gpV',v=>{gap=v/100;return gap;},v=>v.toFixed(2),
+  ()=>render());
+
+cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY};idle=0;
+  cv.classList.add('drag');cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',e=>{
+  if(!drag)return;
+  az-=(e.clientX-drag.x)*0.0075;
+  el=Math.max(-0.25,Math.min(1.35,el+(e.clientY-drag.y)*0.005));
+  drag={x:e.clientX,y:e.clientY};idle=0;});
+const endDrag=()=>{drag=null;cv.classList.remove('drag');};
+cv.addEventListener('pointerup',endDrag);
+cv.addEventListener('pointercancel',endDrag);
+
+let last=performance.now(),frames=0,acc=0,frameFailed=false;
+function frame(now){
+  try{
+    engine.pump(now);
+    if(!drag){idle++; if(idle>40)az+=0.0016;}
+    render();
+  }catch(err){
+    if(!frameFailed){
+      frameFailed=true;
+      firstErr=err.message||String(err);
+      const el2=document.getElementById('errline');
+      if(el2){el2.style.display='block';
+        el2.textContent='frame failed: '+firstErr;}
+      diag();
+    }
+  }
+  frames++;acc+=now-last;last=now;
+  if(acc>700){document.getElementById('fps').textContent=
+    (frames/(acc/1000)).toFixed(0)+' fps';frames=0;acc=0;}
+  requestAnimationFrame(frame);
+}
+
+document.getElementById('foot').innerHTML=
+ `<b>The dandelions.</b> Three grow on the regenerative block at the start; the synthetic block `+
+ `starts bare. Each one is a rosette, a stem, a flower, then a seed head, and below it a taproot `+
+ `written into the same root array the pasture roots use — so a dandelion feeds the soil the `+
+ `moment it takes, through the exudation path that already exists. Growth draws real moisture `+
+ `and nitrogen out of the taproot cells; a plant that cannot feed dies, and its root decays to `+
+ `organic matter where it stood. Seeds travel on the wind, cross between the blocks at the facing `+
+ `edge, and germinate where they land wet — which on the sealed block mostly means beside `+
+ `standing water during a storm. Where a seed takes there, the taproot reaches the moisture the `+
+ `surface refuses, and the soil opens around it.<br><br>`+
+ `<b>The sun.</b> It rises at the right edge of the blocks, arcs overhead, and sets at the `+
+ `left — one day every ${DAY_LEN} steps. The faces are lit by where it stands: eastern faces `+
+ `in the morning, tops at noon, western faces late, a dim flat light at night. It is not only `+
+ `light: surface evaporation follows it, dandelions grow and release seed only while it is up, `+
+ `and their flowers close for the night.<br><br>`+
+ `<b>Most of this happens below the surface.</b> Carbon enters the soil only where a root puts `+
+ `it and leaves it only through microbes eating it, so the fungi live in sleeves around the `+
+ `roots and thin out between them. The orange points inside the soil are the microbes `+
+ `themselves: where the bacteria field is dense, cells show as colonies, and the pattern `+
+ `shifts as the soil is repacked — how many you see is set by the field, not by decoration. The regenerative block is rooted to the bottom of the `+
+ `profile; the synthetic block reaches about a quarter of the way down. Try <b>Carbon</b> and `+
+ `<b>Fungi</b> to see the root systems on their own.<br><br>`+
+ `<b>How it is drawn.</b> No mesh, nothing cut away. For every pixel a ray is stepped through `+
+ `the grid one cell at a time. A cube fills only part of its cell, so the ray can pass through `+
+ `the gaps, and each cube it hits contributes colour and a share of opacity before the ray `+
+ `carries on. How much opacity depends on how crowded the cell is: a cube standing on its own `+
+ `is nearly solid, a cube buried in a mass is thin, which is what makes the inside of the block `+
+ `visible from outside it. The three sliders set the opacity of a lone cube, how far crowding `+
+ `thins one down, and the gap between cubes.<br><br>`+
+ `<b>Size and speed.</b> ${NX}×${NY}×${NZ} per block — double the previous edge, eight times `+
+ `the cells — ${(NX*GROUND*NZ).toLocaleString()} soil cells running the four passes ported `+
+ `from <code>SoilCube.java</code>, twice over. At this size one step costs a fair fraction of `+
+ `a second, so the simulation runs in a background thread and posts each finished step across, and if the browser refuses that thread it runs here instead, sliced into pieces of a few milliseconds so nothing stalls; `+
+ `the blocks keep turning at frame rate no matter how long a step takes, and the readout in `+
+ `the top corner shows the rate the soil is actually advancing. The sky is repacked every `+
+ `step and the soil every fourth, since soil changes slowly. Three departures from the Java: `+
+ `soil can compact as well as loosen, fungi are charged for all the carbon they eat rather `+
+ `than half, and surface evaporation now follows the sun rather than running at a flat rate.`;
+
+/* Build 13: one path. The engine starts first (it may reduce the grid),
+   then the renderer is sized to whatever the engine settled on. */
+try{
+  bootStage='starting engine';
+  engine=makeInlineEngine();
+  bootStage='starting renderer';diag();
+  glOK=initGL();
+  bootStage=glOK?'running':'no webgl2';diag();
+}catch(err){
+  firstErr=err.message||String(err);
+  const el2=document.getElementById('errline');
+  if(el2){el2.style.display='block';
+    el2.textContent='the simulation could not start: '+firstErr;}
+  diag();
+}
+if(!glOK){
+  document.querySelector('.stage').innerHTML=
+    '<div class="gone">This needs WebGL2 for the 3D texture the raymarcher reads. '+
+    'The browser did not provide it.</div>';
+}else{
+  requestAnimationFrame(frame);
+}
+setTimeout(()=>{
+  if(!lastStats||lastStats.tick===0){
+    staleWarn=true;
+    const el2=document.getElementById('errline');
+    if(el2){el2.style.display='block';
+      el2.textContent='the simulation has not advanced after ten seconds — '+
+        'the status line below shows the last stage reached.';}
+    diag();
+  }
+},10000);
+window.addEventListener('resize',()=>{drawChart();});
+window.addEventListener('error',(ev)=>{
+  const masked=ev&&ev.message==='Script error.'&&!ev.filename;
+  if(masked){
+    if(ev.preventDefault)ev.preventDefault();
+    if(window.__workerRefused)window.__workerRefused('masked window error');
+    return;
+  }
+  const el2=document.getElementById('errline');
+  if(!el2)return;
+  el2.style.display='block';
+  el2.textContent='page error: '+((ev&&ev.message)||'no detail given')+
+    (ev&&ev.filename?'  ('+ev.filename.split('/').pop()+':'+ev.lineno+')':'');
+  if(!firstErr){firstErr=(ev&&ev.message)||'unknown';diag();}
+});
+</script>
+</body>
+</html>
