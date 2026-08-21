@@ -20,7 +20,7 @@ h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.02em}
 h1 span{color:var(--faint);font-weight:400}
 .clock{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
 .clock b{color:var(--text);font-weight:500}
-.lede{color:var(--dim);font-size:12px;margin:6px 0 12px;max-width:90ch}
+.lede{color:var(--dim);font-size:12px;margin:10px 0 0;max-width:90ch}
 
 .sky{display:flex;align-items:center;gap:10px;margin-bottom:10px;
  border:1px solid var(--edge);background:var(--ink);padding:7px 10px;flex-wrap:wrap}
@@ -121,6 +121,8 @@ footer code{color:var(--dim)}
 <div class="stats">
   <div id="stR"></div><div id="stS"></div>
 </div>
+<p class="lede">Two blocks of the same land, farmed two ways. Rain and litter fall on them,
+the soil beneath runs its chemistry, dandelions come and go. Drag to turn the blocks.</p>
 <div id="errline" style="display:none;border:1px solid #5a3030;background:#1a0f0f;
  color:#d99;padding:6px 10px;font-size:11px;margin-top:8px"></div>
 <div id="diag" style="color:#454a51;font-size:10px;margin-top:6px;
@@ -131,7 +133,7 @@ footer code{color:var(--dim)}
   <button id="reset">Restart</button>
   <div class="view" id="views"></div>
   <span class="spd">rain <input type="range" id="rn" min="0" max="250" value="100"><b id="rnV">1.0×</b></span>
-  <span class="spd" style="margin-left:0">speed <input type="range" id="spd" min="1" max="4" value="2"><b id="spdV">2×</b></span>
+  <span class="spd" style="margin-left:0">speed <input type="range" id="spd" min="1" max="5" value="2"><b id="spdV">2×</b></span>
 </div>
 
 <div class="knobs">
@@ -141,6 +143,8 @@ footer code{color:var(--dim)}
     <input type="range" id="ok" min="0" max="98" value="78"></label>
   <label><span>Gap between cubes <b id="gpV">0.20</b></span>
     <input type="range" id="gp" min="0" max="45" value="20"></label>
+  <label><span>Day length <b id="dlV">96 steps</b></span>
+    <input type="range" id="dl" min="24" max="360" step="12" value="96"></label>
 </div>
 
 <div class="palette">
@@ -194,7 +198,7 @@ function vnoise(fx,fz,scale,sd){
   const a=hash2(X,Z,sd),b=hash2(X+1,Z,sd),c=hash2(X,Z+1,sd),d=hash2(X+1,Z+1,sd);
   return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
 }
-const DAY_LEN=24;   // steps per day; the 'day' counter has always been t/24
+let DAY_LEN=96;    // steps per day, set by the Day length slider
 
 /* The sun. Rises at the +x edge of the blocks, arcs overhead, sets at the
    -x edge -- right to left as the piece opens. Pure function of the step,
@@ -242,6 +246,10 @@ class SoilWorld{
     this.cFlux=new Float32Array(this.n*3);
     this.wScale=new Float32Array(this.n);
     this.cScale=new Float32Array(this.n);
+    /* two-column cache of per-cell saturation and flow velocity, in double
+       precision so the arithmetic is unchanged */
+    this.satP0=new Float64Array(ny*nz); this.velP0=new Float64Array(ny*nz);
+    this.satP1=new Float64Array(ny*nz); this.velP1=new Float64Array(ny*nz);
   }
   idx(i,j,k){return (i*this.ny+j)*this.nz+k;}
 
@@ -379,33 +387,57 @@ class SoilWorld{
   }
 
   computeFlux(){this.computeFluxRange(0,this.nx);}
+  fillPlane(i,sat,vel){
+    const {nz,ny,a,solid}=this;
+    const ground=this.jTop;
+    const M=a.moisture,P=a.permeability,F=a.fungi,B=a.bacteria;
+    for(let j=0;j<ground;j++){
+      let p=(i*ny+j)*nz, q=j*nz;
+      for(let k=0;k<nz;k++,p++,q++){
+        if(!solid[p])continue;
+        const m=M[p],pe=P[p],fu=F[p],ba=B[p];
+        const cap=pe*.5+fu*.5;
+        sat[q]=cap<=0?1:m/cap;
+        vel[q]=m*((2-(fu+ba))*.25+.5);
+      }
+    }
+  }
   computeFluxRange(i0,i1){
     const {nx,nz,ny,a,solid,wFlux,cFlux}=this;
     const ground=this.jTop;
     wFlux.fill(0,i0*ny*nz*3,i1*ny*nz*3);
     cFlux.fill(0,i0*ny*nz*3,i1*ny*nz*3);
     const SX=ny*nz, SY=nz;
-    const M=a.moisture,P=a.permeability,F=a.fungi,B=a.bacteria,C=a.carbon;
+    const M=a.moisture,P=a.permeability,C=a.carbon;
+    /* Saturation and flow velocity belong to a cell, not to a direction.
+       They are computed once per cell into a two-column cache, rather than
+       recomputed by each of the three neighbours that asks for them. */
+    let satA=this.satP0, velA=this.velP0, satB=this.satP1, velB=this.velP1;
+    this.fillPlane(i0,satA,velA);
     for(let i=i0;i<i1;i++){
       const hasX=i+1<nx;
+      if(hasX)this.fillPlane(i+1,satB,velB);
       for(let j=0;j<ground;j++){
         const hasY=j+1<ground;
-        let p=(i*ny+j)*nz;
-        for(let k=0;k<nz;k++,p++){
+        let p=(i*ny+j)*nz, pl=j*nz;
+        for(let k=0;k<nz;k++,p++,pl++){
           if(!solid[p])continue;
-          const mA=M[p],pA=P[p],fA=F[p],bA=B[p],cA=C[p];
-          const capA=pA*.5+fA*.5, sA=capA<=0?1:mA/capA;
-          const vA=mA*((2-(fA+bA))*.25+.5);
+          const mA=M[p],pA=P[p],cA=C[p];
+          const sA=satA[pl], vA=velA[pl];
           const f3=p*3;
           for(let ax=0;ax<3;ax++){
-            let q;
-            if(ax===0){if(!hasX)continue;q=p+SX;}
-            else if(ax===1){if(!hasY)continue;q=p+SY;}
-            else{if(k+1>=nz)continue;q=p+1;}
-            if(!solid[q])continue;
-            const mB=M[q],pB=P[q],fB=F[q],bB=B[q],cB=C[q];
-            const capB=pB*.5+fB*.5, sB=capB<=0?1:mB/capB;
-            const vB=mB*((2-(fB+bB))*.25+.5);
+            let q,sB,vB;
+            if(ax===0){
+              if(!hasX)continue; q=p+SX; if(!solid[q])continue;
+              sB=satB[pl]; vB=velB[pl];
+            }else if(ax===1){
+              if(!hasY)continue; q=p+SY; if(!solid[q])continue;
+              sB=satA[pl+nz]; vB=velA[pl+nz];
+            }else{
+              if(k+1>=nz)continue; q=p+1; if(!solid[q])continue;
+              sB=satA[pl+1]; vB=velA[pl+1];
+            }
+            const mB=M[q],pB=P[q],cB=C[q];
             const vert=ax===1;
             let w=0;
             if(sA>sB){let g=(vA-vB)*pB;
@@ -420,17 +452,20 @@ class SoilWorld{
           }
         }
       }
+      const ts=satA;satA=satB;satB=ts;
+      const tv=velA;velA=velB;velB=tv;
     }
   }
   /* both limiter fields in one pass over the flux arrays */
   computeScales(){this.computeScalesRange(0,this.nx);}
   computeScalesRange(i0,i1){
-    const {nz,ny,a,wFlux,cFlux,wScale,cScale}=this;
+    const {nz,ny,a,solid,wFlux,cFlux,wScale,cScale}=this;
     const ground=this.jTop;
     const SX=ny*nz, SY=nz, W=a.moisture, C=a.carbon;
     for(let i=i0;i<i1;i++)for(let j=0;j<ground;j++){
       let p=(i*ny+j)*nz;
       for(let k=0;k<nz;k++,p++){
+        if(!solid[p])continue;
         const f3=p*3;
         let dw=0,dc=0,v;
         v=wFlux[f3];   if(v>0)dw+=v;
@@ -453,9 +488,9 @@ class SoilWorld{
   }
   applyFlux(){this.applyFluxRange(0,this.nx);this.finishStep();}
   applyFluxRange(i0,i1){
-    const {nz,ny,a,b,wFlux,cFlux,wScale,cScale}=this;
-    const ground=this.jTop;
+    const {nz,ny,a,b,solid,wFlux,cFlux,wScale,cScale}=this;
     const SX=ny*nz, SY=nz;
+    const ground=this.jTop;
     const lo=i0*ny*nz, hi=i1*ny*nz;
     b.permeability.set(a.permeability.subarray(lo,hi),lo);
     b.ammonium.set(a.ammonium.subarray(lo,hi),lo);
@@ -464,31 +499,47 @@ class SoilWorld{
     for(let i=i0;i<i1;i++)for(let j=0;j<ground;j++){
       let p=(i*ny+j)*nz;
       for(let k=0;k<nz;k++,p++){
+        if(!solid[p])continue;      /* air carries nothing and stays zero */
         let dW=0,dN=0,dB=0,dF=0,dO=0,dC=0;
-        for(let face=0;face<6;face++){
-          const ax=face%3, mine=face<3;
-          const step=ax===0?SX:ax===1?SY:1;
-          let o=p;
-          if(!mine){
-            if(ax===0){if(i===0)continue;}
-            else if(ax===1){if(j===0)continue;}
-            else{if(k===0)continue;}
-            o=p-step;
-          }
-          const o3=o*3+ax;
+        /* the six faces, unrolled in the original order so the
+           floating-point accumulation is unchanged */
+        for(let ax=0;ax<3;ax++){          /* my own +x, +y, +z faces */
+          const stp=ax===0?SX:ax===1?SY:1;
+          const o3=p*3+ax;
           let w=wFlux[o3], c=cFlux[o3];
-          if(w>0)w*=wScale[o]; else if(w<0)w*=wScale[o+step];
-          if(c>0)c*=cScale[o]; else if(c<0)c*=cScale[o+step];
-          if(mine){w=-w;c=-c;}
+          if(w>0)w*=wScale[p]; else if(w<0)w*=wScale[p+stp];
+          if(c>0)c*=cScale[p]; else if(c<0)c*=cScale[p+stp];
+          w=-w;c=-c;
           dC+=c;
-          if(w===0)continue;
-          const g=w>0?(mine?p+step:o):p;
-          const mv=w<0?-w:w, sg=w<0?-1:1;
-          dW+=w;
-          dN+=sg*N[g]*mv*LEACH_NITROGEN;
-          dB+=sg*B[g]*mv*LEACH_BACTERIA;
-          dF+=sg*F[g]*mv*LEACH_FUNGI;
-          dO+=sg*O[g]*mv*LEACH_ORGANIC;
+          if(w!==0){
+            const g=w>0?p+stp:p;
+            const mv=w<0?-w:w, sg=w<0?-1:1;
+            dW+=w;
+            dN+=sg*N[g]*mv*LEACH_NITROGEN;
+            dB+=sg*B[g]*mv*LEACH_BACTERIA;
+            dF+=sg*F[g]*mv*LEACH_FUNGI;
+            dO+=sg*O[g]*mv*LEACH_ORGANIC;
+          }
+        }
+        for(let ax=0;ax<3;ax++){          /* the faces my -x, -y, -z neighbours own */
+          if(ax===0){if(i===0)continue;}
+          else if(ax===1){if(j===0)continue;}
+          else{if(k===0)continue;}
+          const stp=ax===0?SX:ax===1?SY:1;
+          const o=p-stp, o3=o*3+ax;
+          let w=wFlux[o3], c=cFlux[o3];
+          if(w>0)w*=wScale[o]; else if(w<0)w*=wScale[p];
+          if(c>0)c*=cScale[o]; else if(c<0)c*=cScale[p];
+          dC+=c;
+          if(w!==0){
+            const g=w>0?o:p;
+            const mv=w<0?-w:w, sg=w<0?-1:1;
+            dW+=w;
+            dN+=sg*N[g]*mv*LEACH_NITROGEN;
+            dB+=sg*B[g]*mv*LEACH_BACTERIA;
+            dF+=sg*F[g]*mv*LEACH_FUNGI;
+            dO+=sg*O[g]*mv*LEACH_ORGANIC;
+          }
         }
         oM[p]=clamp01(M[p]+dW); oN[p]=clamp01(N[p]+dN);
         oB[p]=clamp01(B[p]+dB); oF[p]=clamp01(F[p]+dF);
@@ -933,7 +984,7 @@ function createSim(){
     else{storm=Math.max(0,storm-0.02);
          if(wrnd()<0.0022+0.004*season)stormLeft=40+((wrnd()*90)|0);}
     weather=clamp01(0.05*season+storm*0.95);
-    day=Math.floor(t/24);
+    day=Math.floor(t/DAY_LEN);
     wind+=(wrnd()-0.5)*0.06; wind*=0.999;
     if(wrnd()<0.003)wind=(wrnd()<0.5?-1:1)*(0.7+0.3*wrnd());
     wind=Math.max(-1,Math.min(1,wind));
@@ -1076,24 +1127,34 @@ function createSim(){
           const fu=a.fungi[p],ba=a.bacteria[p],om=a.organic[p],ca=a.carbon[p],
                 ni=a.nitrogen[p],mo=a.moisture[p],pe=a.permeability[p];
           const cap=pe*.5+fu*.5;
-          sc[0]=soil.root[p]>0.1?9.0:0.0;
-          sc[1]=fu*2.2; sc[2]=ba*2.0; sc[3]=om*2.0; sc[4]=ca*2.4;
+          /* Proportional representation: the cell's colour is drawn from
+             the full distribution of its scaled values, so over any
+             neighbourhood the count of cells showing a class tracks that
+             class's actual share. The draw per cell is fixed (grain), so
+             the picture shifts only as the values themselves shift.
+             Microbes are carried separately as the animated channel. */
+          /* roots are structure and draw wherever they run; the other
+             classes are drawn in proportion around them */
+          sc[0]=0.0; sc[1]=fu*2.2; sc[2]=0.0; sc[3]=om*2.0; sc[4]=ca*2.4;
           sc[5]=ni*0.85; sc[6]=(cap<=0?0:mo/cap)*0.60; sc[7]=0.26;
-          let i1=0,v1=-1,i2=0,v2=-1;
-          for(let e=0;e<8;e++){
-            if(sc[e]>v1){v2=v1;i2=i1;v1=sc[e];i1=e;}
-            else if(sc[e]>v2){v2=sc[e];i2=e;}
+          let pick=7;
+          if(soil.root[p]>0.1){pick=0;sc[0]=9.0;}
+          else{
+            let tot=0;
+            for(let e=1;e<8;e++)tot+=sc[e];
+            if(tot>0){
+              let draw=grain[p]*tot;
+              for(let e=1;e<8;e++){draw-=sc[e];if(draw<=0){pick=e;break;}}
+            }
           }
-          let pick=grain[p]<(v1>0?v2/v1:0)*0.55?i2:i1;
-          /* living speckle: where bacteria are dense, some cells show as
-             microbes this repack -- how many is set by the field itself */
           if(pick!==0&&ba>0.07){
             const hh=grain[(p+shim)%G];
             if(hh<Math.min(ba*0.5,0.18))pick=2;
           }
           const c=ELEMENTS[pick][1];
+          const pv=sc[pick];
           const sh=pick===2?0.55+0.45*grain[(p+shim+1)%G]
-                           :0.50+0.50*(v1<1?v1:1);
+                           :0.50+0.50*(pv<1?pv:1);
           r=c[0]*sh;g=c[1]*sh;b=c[2]*sh;
           w=EL_WEIGHT[pick];
         }
@@ -1171,7 +1232,7 @@ function workerMain(){
     if(!running){timer=null;return;}
     const t0=Date.now();
     sim.step();stepN++;
-    frameOut((stepN&3)===0,Date.now()-t0);
+    frameOut((stepN&7)===0,Date.now()-t0);
     timer=setTimeout(loop,Math.max(0,interval-(Date.now()-t0)));
   }
   self.onmessage=(e)=>{
@@ -1193,7 +1254,7 @@ function workerMain(){
    Main thread: WebGL raymarcher, controls, and an engine that prefers
    a Web Worker but falls back to running the simulation inline.
    =================================================================== */
-const BUILD=15;
+const BUILD=17;
 const cv=document.getElementById('gl');
 cv.width=880; cv.height=440;
 let gl=null, prog=null, U={}, texR=null, texS=null, glOK=false;
@@ -1479,7 +1540,7 @@ function makeInlineEngine(){
   return {
     play(){}, pause(){},
     reset(){hist.R=[];hist.S=[];sim.reset();stepN=0;startPack(true);},
-    speed(v){interval=64/v;budget=[0,10,16,24,32][v]||16;},
+    speed(v){interval=64/v;budget=[0,10,16,24,32,48][v]||16;},
     rain(v){sim.setRain(v);},
     view(v){hist.R=[];hist.S=[];sim.setView(v);startPack(true);},
     look(op,ok){sim.setLook(op,ok);startPack(true);},
@@ -1495,7 +1556,7 @@ function makeInlineEngine(){
         queue.shift()();
         if(!queue.length&&phase==='step'){
           stepN++;lastDone=now;
-          startPack((stepN&3)===0);
+          startPack((stepN&7)===0);
         }
       }
     },
@@ -1585,6 +1646,9 @@ const spd=document.getElementById('spd');
 spd.oninput=()=>{speed=+spd.value;
   document.getElementById('spdV').textContent=speed+'×';
   engine.speed(speed);};
+const dl=document.getElementById('dl');
+dl.oninput=()=>{DAY_LEN=+dl.value;
+  document.getElementById('dlV').textContent=DAY_LEN+' steps';};
 const rn=document.getElementById('rn');
 rn.oninput=()=>{const v=(+rn.value)/100;
   document.getElementById('rnV').textContent=v.toFixed(1)+'×';
@@ -1656,7 +1720,7 @@ document.getElementById('foot').innerHTML=
  `standing water during a storm. Where a seed takes there, the taproot reaches the moisture the `+
  `surface refuses, and the soil opens around it.<br><br>`+
  `<b>The sun.</b> It rises at the right edge of the blocks, arcs overhead, and sets at the `+
- `left — one day every ${DAY_LEN} steps. The faces are lit by where it stands: eastern faces `+
+ `left — one day per Day-length slider setting (default ${DAY_LEN} steps). The faces are lit by where it stands: eastern faces `+
  `in the morning, tops at noon, western faces late, a dim flat light at night. It is not only `+
  `light: surface evaporation follows it, dandelions grow and release seed only while it is up, `+
  `and their flowers close for the night.<br><br>`+
@@ -1672,8 +1736,13 @@ document.getElementById('foot').innerHTML=
  `the gaps, and each cube it hits contributes colour and a share of opacity before the ray `+
  `carries on. How much opacity depends on how crowded the cell is: a cube standing on its own `+
  `is nearly solid, a cube buried in a mass is thin, which is what makes the inside of the block `+
- `visible from outside it. The three sliders set the opacity of a lone cube, how far crowding `+
- `thins one down, and the gap between cubes.<br><br>`+
+ `visible from outside it. Each soil cell holds all eight quantities at once as continuous `+
+ `values; the colour a cell shows is drawn from that distribution in proportion to its scaled `+
+ `values (fungi ×2.2, carbon ×2.4, humus ×2.0, nitrate ×0.85, wet soil ×0.6, mineral 0.26; `+
+ `roots draw as structure wherever they run), so across any region the count of cells of a class tracks `+
+ `that class's real share, and the picture changes only as the values change. The sliders set `+
+ `the opacity of a lone cube, how far crowding thins one down, the gap between cubes, and the `+
+ `length of a day.<br><br>`+
  `<b>Size and speed.</b> ${NX}×${NY}×${NZ} per block — double the previous edge, eight times `+
  `the cells — ${(NX*GROUND*NZ).toLocaleString()} soil cells running the four passes ported `+
  `from <code>SoilCube.java</code>, twice over. At this size one step costs a fair fraction of `+
