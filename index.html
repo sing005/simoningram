@@ -130,7 +130,8 @@ footer code{color:var(--dim)}
   <button id="play" class="on">Pause</button>
   <button id="reset">Restart</button>
   <div class="view" id="views"></div>
-  <span class="spd">speed <input type="range" id="spd" min="1" max="4" value="1"><b id="spdV">1×</b></span>
+  <span class="spd">rain <input type="range" id="rn" min="0" max="250" value="100"><b id="rnV">1.0×</b></span>
+  <span class="spd" style="margin-left:0">speed <input type="range" id="spd" min="1" max="4" value="2"><b id="spdV">2×</b></span>
 </div>
 
 <div class="knobs">
@@ -178,6 +179,21 @@ const MIN_MOVE=0.005, MIN_NO2=0.005, BACTERIA_NO2_FIXING=0.1,
  INFILT=0.16, PERM_FLOOR=0.03, SLOPE=1, DROP=0.03, POND_MAX=4;
 
 let NX=96, NY=88, NZ=96, GROUND=44;   // overridable before createSim, for tests
+const TER_AMP=6;   // the surface wanders this many cells above and below GROUND
+
+/* small seeded value noise for the ground surface */
+function hash2(x,z,sd){
+  let h=(x*374761393+z*668265263+sd*974634)|0;
+  h=Math.imul(h^(h>>>13),1274126177);
+  return ((h^(h>>>16))>>>0)/4294967296;
+}
+function vnoise(fx,fz,scale,sd){
+  const X=Math.floor(fx/scale),Z=Math.floor(fz/scale);
+  const tx=fx/scale-X, tz=fz/scale-Z;
+  const u=tx*tx*(3-2*tx), v=tz*tz*(3-2*tz);
+  const a=hash2(X,Z,sd),b=hash2(X+1,Z,sd),c=hash2(X,Z+1,sd),d=hash2(X+1,Z+1,sd);
+  return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
+}
 const DAY_LEN=24;   // steps per day; the 'day' counter has always been t/24
 
 /* The sun. Rises at the +x edge of the blocks, arcs overhead, sets at the
@@ -221,6 +237,7 @@ class SoilWorld{
     this.solid=new Uint8Array(this.n);
     this.root=new Float32Array(this.n);
     this.surfaceY=new Int32Array(nx*nz);
+    this.jTop=this.ground;this.minSurf=this.ground-1;
     this.wFlux=new Float32Array(this.n*3);
     this.cFlux=new Float32Array(this.n*3);
     this.wScale=new Float32Array(this.n);
@@ -235,13 +252,26 @@ class SoilWorld{
     const jit=sp=>(rnd()-.5)*2*sp;
     const regen=mode==='REGENERATIVE';
     for(const f of FIELDS){this.a[f].fill(0);this.b[f].fill(0);}
+    /* The ground is not flat. Two octaves of noise plus a slight overall
+       fall toward +x, the same for every block filled with the same seed,
+       so the two soils sit on identical land. */
+    const s1=(seed*2654435761)>>>0, s2=(seed*40503+11)>>>0;
+    let hMin=ny, hMax=0;
     for(let i=0;i<nx;i++)for(let k=0;k<nz;k++){
-      this.surfaceY[i*nz+k]=ground-1;
+      let H=ground+Math.round(
+        TER_AMP*((vnoise(i,k,26,s1)-0.5)*1.5+(vnoise(i,k,9,s2)-0.5)*0.7)
+        -(i/nx)*1.5);
+      if(H<ground-TER_AMP)H=ground-TER_AMP;
+      if(H>ground+TER_AMP)H=ground+TER_AMP;
+      if(H<6)H=6;
+      this.surfaceY[i*nz+k]=H-1;
+      if(H-1<hMin)hMin=H-1;
+      if(H>hMax)hMax=H;
       for(let j=0;j<ny;j++){
         const p=this.idx(i,j,k);
-        if(j>=ground){this.solid[p]=0;continue;}
+        if(j>=H){this.solid[p]=0;continue;}
         this.solid[p]=1;
-        const up=1-(ground-j)/ground;
+        const up=1-(H-j)/H;
         if(regen){
           this.a.moisture[p]=clamp01(.30+jit(.05));
           this.a.permeability[p]=clamp01(up*.7+.15);
@@ -263,6 +293,8 @@ class SoilWorld{
         }
       }
     }
+    this.minSurf=hMin;
+    this.jTop=hMax;
     this.tick=0;
   }
 
@@ -301,7 +333,7 @@ class SoilWorld{
     };
     for(let n=0;n<spec.count;n++){
       const i=(rnd()*nx)|0, k=(rnd()*nz)|0;
-      walk(i,k,ground-1,spec.thick,spec.depth,spec.drift);
+      walk(i,k,this.surfaceY[i*nz+k],spec.thick,spec.depth,spec.drift);
     }
   }
 
@@ -309,10 +341,11 @@ class SoilWorld{
 
   microbes(){this.microbesRange(0,this.nx);}
   microbesRange(i0,i1){
-    const {ny,nz,a,solid,surfaceY,ground,root}=this;
+    const {ny,nz,a,solid,surfaceY,root}=this;
+    const jT=this.jTop;
     const ORG=a.organic,BAC=a.bacteria,PER=a.permeability,MOI=a.moisture,
           CAR=a.carbon,FUN=a.fungi,NIT=a.nitrogen;
-    for(let i=i0;i<i1;i++)for(let j=0;j<ground;j++){
+    for(let i=i0;i<i1;i++)for(let j=0;j<jT;j++){
       let p=(i*ny+j)*nz;
       for(let k=0;k<nz;k++,p++){
         if(!solid[p])continue;
@@ -335,7 +368,7 @@ class SoilWorld{
           if(org>0){oF=org*fun*OM_TO_FUNGI_FOOD;org+=clampedAdd(org,-oF);}
           fun+=clampedAdd(fun,((cF+oF)-fun*FUNGI_FOOD_NEEDED)*FOOD_TO_FUNGI);
         }
-        if(wat>0&&j===ground-1)
+        if(wat>0&&j===surfaceY[i*nz+k])
           wat=clamp01(wat-EVAPORATION_RATE*(0.3+1.4*this.sun));
         const rt=root[p];
         if(rt>0&&this.exudation>0)car+=clampedAdd(car,this.exudation*rt);
@@ -347,7 +380,8 @@ class SoilWorld{
 
   computeFlux(){this.computeFluxRange(0,this.nx);}
   computeFluxRange(i0,i1){
-    const {nx,ground,nz,ny,a,solid,wFlux,cFlux}=this;
+    const {nx,nz,ny,a,solid,wFlux,cFlux}=this;
+    const ground=this.jTop;
     wFlux.fill(0,i0*ny*nz*3,i1*ny*nz*3);
     cFlux.fill(0,i0*ny*nz*3,i1*ny*nz*3);
     const SX=ny*nz, SY=nz;
@@ -391,7 +425,8 @@ class SoilWorld{
   /* both limiter fields in one pass over the flux arrays */
   computeScales(){this.computeScalesRange(0,this.nx);}
   computeScalesRange(i0,i1){
-    const {ground,nz,ny,a,wFlux,cFlux,wScale,cScale}=this;
+    const {nz,ny,a,wFlux,cFlux,wScale,cScale}=this;
+    const ground=this.jTop;
     const SX=ny*nz, SY=nz, W=a.moisture, C=a.carbon;
     for(let i=i0;i<i1;i++)for(let j=0;j<ground;j++){
       let p=(i*ny+j)*nz;
@@ -418,7 +453,8 @@ class SoilWorld{
   }
   applyFlux(){this.applyFluxRange(0,this.nx);this.finishStep();}
   applyFluxRange(i0,i1){
-    const {ground,nz,ny,a,b,wFlux,cFlux,wScale,cScale}=this;
+    const {nz,ny,a,b,wFlux,cFlux,wScale,cScale}=this;
+    const ground=this.jTop;
     const SX=ny*nz, SY=nz;
     const lo=i0*ny*nz, hi=i1*ny*nz;
     b.permeability.set(a.permeability.subarray(lo,hi),lo);
@@ -471,12 +507,12 @@ class SoilWorld{
     for(let p=0;p<this.n;p++)if(this.solid[p]){s+=A[p];n++;}
     return n?s/n:0;}
   headroom(i,k){
-    const p=this.idx(i,this.ground-1,k);
+    const p=this.idx(i,this.surfaceY[i*this.nz+k],k);
     const cap=this.a.permeability[p]*.5+this.a.fungi[p]*.5;
     return Math.min(Math.max(0,cap-this.a.moisture[p]),this.a.permeability[p]*INFILT);
   }
   deposit(i,k,field,amount){
-    const p=this.idx(i,this.ground-1,k);
+    const p=this.idx(i,this.surfaceY[i*this.nz+k],k);
     this.a[field][p]=clamp01(this.a[field][p]+amount);
   }
 }
@@ -529,9 +565,10 @@ class Sky{
     }
     if(recipe.litter>0){
       for(let n=0;n<4;n++){
-        const i=(this.rnd()*nx)|0, k=(this.rnd()*nz)|0, j=ground+1;
+        const i=(this.rnd()*nx)|0, k=(this.rnd()*nz)|0;
+        const sy=this.soil.surfaceY[i*nz+k], j=sy+2;
         if(j>=ny||this.at(i,j,k)!==EMPTY)continue;
-        if(this.soil.a.fungi[this.soil.idx(i,ground-1,k)]>0.35&&this.rnd()<0.3)
+        if(this.soil.a.fungi[this.soil.idx(i,sy,k)]>0.35&&this.rnd()<0.3)
           this.set(i,j,k,SPORE);
       }
     }
@@ -539,15 +576,18 @@ class Sky{
 
   step(rain,wind){
     this.stepBegin(rain);
-    this.stepRows(this.ground,this.ny,wind);
+    this.stepRows(this.soil.minSurf,this.ny,wind);
   }
   stepBegin(rain){
     this.spawn(rain);
     this.dir=-this.dir;
     this.moved.fill(0);
   }
+  /* a cell a particle may enter: inside the grid, not soil, not occupied */
+  free(n){return !this.soil.solid[n]&&!this.cell[n];}
   stepRows(j0,j1,wind){
-    const {nx,ny,nz,ground,cell,moved,age,layerN}=this;
+    const {nx,ny,nz,cell,moved,age,layerN}=this;
+    const solid=this.soil.solid, surfY=this.soil.surfaceY;
     const DX=[1,-1,0,0], DZ=[0,0,1,-1];
 
     for(let j=j0;j<j1;j++){
@@ -557,7 +597,9 @@ class Sky{
         for(let k=0;k<nz;k++){
           const n=(i*ny+j)*nz+k, e=cell[n];
           if(e===EMPTY||moved[n])continue;
-          if(e>=STEM)continue;                 // plants do not move
+          if(e>=STEM)continue;
+
+          const onGround = j===0 || solid[n-nz];
 
           if(e===SPORE){
             const nj=j+1;
@@ -565,97 +607,115 @@ class Sky{
             if(nj<ny){
               const ni=Math.max(0,Math.min(nx-1,i+((this.rnd()*3)|0)-1));
               const nk=Math.max(0,Math.min(nz-1,k+((this.rnd()*3)|0)-1));
-              if(this.at(ni,nj,nk)===EMPTY){
-                this.set(ni,nj,nk,SPORE);moved[(ni*ny+nj)*nz+nk]=1;
-              }
+              const t=(ni*ny+nj)*nz+nk;
+              if(this.free(t)){this.setN(t,SPORE);moved[t]=1;}
             }
             continue;
           }
 
           if(e===SEED){
-            if(age[n]>240){this.setN(n,EMPTY);continue;}   // spent
-            if(age[n]++%2)continue;            // seeds fall at half rate
+            if(age[n]>240){this.setN(n,EMPTY);continue;}
+            if(age[n]++%2)continue;
             if(this.rnd()<Math.abs(wind)*0.85){
               const ni=i+(wind>0?1:-1);
               if(ni<0||ni>=nx){
                 this.exitSeeds.push({j,k,side:wind>0?1:-1});
                 this.setN(n,EMPTY);continue;
               }
-              if(this.at(ni,j,k)===EMPTY){
-                this.setN(n,EMPTY);this.set(ni,j,k,SEED);
-                moved[(ni*ny+j)*nz+k]=1;continue;
+              const t=(ni*ny+j)*nz+k;
+              if(this.free(t)){
+                this.setN(n,EMPTY);this.setN(t,SEED);moved[t]=1;continue;
               }
             }
             if(this.rnd()<0.22){
               const nk=k+(this.rnd()<0.5?-1:1);
-              if(nk>=0&&nk<nz&&this.at(i,j,nk)===EMPTY){
-                this.setN(n,EMPTY);this.set(i,j,nk,SEED);
-                moved[(i*ny+j)*nz+nk]=1;continue;
+              if(nk>=0&&nk<nz){
+                const t=(i*ny+j)*nz+nk;
+                if(this.free(t)){
+                  this.setN(n,EMPTY);this.setN(t,SEED);moved[t]=1;continue;
+                }
               }
             }
-            if(j===ground){
+            if(onGround){
               this.landed.push({i,k});
               this.setN(n,EMPTY);continue;
             }
-            const bl=j-1;
-            if(this.at(i,bl,k)===EMPTY){
-              this.setN(n,EMPTY);this.set(i,bl,k,SEED);
-              moved[(i*ny+bl)*nz+k]=1;
-            }
+            const t=n-nz;
+            if(this.free(t)){this.setN(n,EMPTY);this.setN(t,SEED);moved[t]=1;}
             continue;
           }
 
           if(e===LITTER&&(age[n]++&1))continue;
           if(e===FERT&&(age[n]++%3))continue;
 
-          if(j===ground){
+          /* --- resting on the ground, wherever the ground is --- */
+          if(onGround){
             if(e!==WATER){this.land(i,k,e);this.setN(n,EMPTY);continue;}
             if(this.soil.headroom(i,k)>=DROP){
               this.soil.deposit(i,k,'moisture',DROP);
               this.soaked++;this.setN(n,EMPTY);continue;
             }
             if(this.rnd()<0.004){this.setN(n,EMPTY);continue;}
-            let ci=i,gone=false;
-            for(let hop=0;hop<3;hop++){
-              const ni=ci+SLOPE;
-              if(ni>=nx){this.runoff++;this.set(ci,j,k,EMPTY);gone=true;break;}
-              if(this.at(ni,j,k)!==EMPTY)break;
-              this.set(ci,j,k,EMPTY);this.set(ni,j,k,WATER);
-              moved[(ni*ny+j)*nz+k]=1;ci=ni;
+            /* Refused. Water follows the land: it moves to whichever
+               neighbouring column has the lower surface, and leaves the
+               block wherever it reaches an edge. Off the edge is runoff. */
+            const mySurf=surfY[i*nz+k];
+            let bi=-2,bk=0,best=mySurf;
+            const r0=(this.rnd()*4)|0;
+            for(let d=0;d<4;d++){
+              const t2=(r0+d)&3, ni=i+DX[t2], nk=k+DZ[t2];
+              if(ni<0||ni>=nx||nk<0||nk>=nz){bi=-1;continue;}
+              const sv=surfY[ni*nz+nk];
+              if(sv<best){best=sv;bi=ni;bk=nk;}
             }
-            if(gone||ci!==i)continue;
-            const ni=i-SLOPE;
-            if(ni>=0&&this.at(ni,j,k)===EMPTY){
-              this.set(i,j,k,EMPTY);this.set(ni,j,k,WATER);moved[(ni*ny+j)*nz+k]=1;
+            if(bi>=0){
+              const t=(bi*ny+(j-1>best?j-1:best+1))*nz+bk;
+              if(this.free(t)){
+                this.setN(n,EMPTY);this.setN(t,WATER);moved[t]=1;continue;
+              }
+            }else if(bi===-1&&this.rnd()<0.5){
+              this.runoff++;this.setN(n,EMPTY);continue;
+            }
+            /* nowhere lower: it ponds, to a limit above its own ground */
+            if(j-(mySurf+1)>=POND_MAX){this.runoff++;this.setN(n,EMPTY);continue;}
+            for(let d=0;d<4;d++){
+              const t2=(r0+d)&3, ni=i+DX[t2], nk=k+DZ[t2];
+              if(ni<0||ni>=nx||nk<0||nk>=nz)continue;
+              const t=(ni*ny+j)*nz+nk;
+              if(this.free(t)){
+                this.setN(n,EMPTY);this.setN(t,WATER);moved[t]=1;break;
+              }
             }
             continue;
           }
 
-          const below=j-1;
-          if(this.at(i,below,k)===EMPTY){
-            this.setN(n,EMPTY);this.set(i,below,k,e);
-            moved[(i*ny+below)*nz+k]=1;continue;
+          /* --- in the air --- */
+          const below=n-nz;
+          if(this.free(below)){
+            this.setN(n,EMPTY);this.setN(below,e);moved[below]=1;continue;
           }
           const r0=(this.rnd()*4)|0;
           let done=false;
           for(let d=0;d<4;d++){
-            const t=(r0+d)&3, ni=i+DX[t], nk=k+DZ[t];
+            const t2=(r0+d)&3, ni=i+DX[t2], nk=k+DZ[t2];
             if(ni<0||ni>=nx||nk<0||nk>=nz)continue;
-            if(this.at(ni,below,nk)===EMPTY){
-              this.setN(n,EMPTY);this.set(ni,below,nk,e);
-              moved[(ni*ny+below)*nz+nk]=1;done=true;break;
+            const t=(ni*ny+(j-1))*nz+nk;
+            if(this.free(t)){
+              this.setN(n,EMPTY);this.setN(t,e);moved[t]=1;done=true;break;
             }
           }
           if(done||e!==WATER)continue;
           if(this.rnd()<0.004){this.setN(n,EMPTY);continue;}
-          if(j-ground>=POND_MAX){this.runoff++;this.setN(n,EMPTY);continue;}
+          if(j-(surfY[i*nz+k]+1)>=POND_MAX){this.runoff++;this.setN(n,EMPTY);continue;}
           for(let d=0;d<4;d++){
-            const t=(r0+d)&3, ni=i+DX[t], nk=k+DZ[t];
-            if(ni>=nx){this.runoff++;this.setN(n,EMPTY);break;}
-            if(ni<0||nk<0||nk>=nz)continue;
-            if(this.at(ni,j,nk)===EMPTY){
-              this.setN(n,EMPTY);this.set(ni,j,nk,WATER);
-              moved[(ni*ny+j)*nz+nk]=1;break;
+            const t2=(r0+d)&3, ni=i+DX[t2], nk=k+DZ[t2];
+            if(ni<0||ni>=nx||nk<0||nk>=nz){
+              if(ni>=nx||ni<0){this.runoff++;this.setN(n,EMPTY);break;}
+              continue;
+            }
+            const t=(ni*ny+j)*nz+nk;
+            if(this.free(t)){
+              this.setN(n,EMPTY);this.setN(t,WATER);moved[t]=1;break;
             }
           }
         }
@@ -688,17 +748,19 @@ class Plants{
 
   add(i,k,preAge){
     if(this.list.length>=MAX_PLANTS)return false;
-    const g=this.soil.ground;
     i=Math.max(1,Math.min(this.soil.nx-2,i));
     k=Math.max(1,Math.min(this.soil.nz-2,k));
+    const g=this.soil.surfaceY[i*this.soil.nz+k]+1;
+    if(g+6>=this.soil.ny)return false;
     for(const p of this.list)
       if(Math.abs(p.i-i)<4&&Math.abs(p.k-k)<4)return false;
-    const d={i,k,stage:ROSETTE,t:preAge||0,cells:[],roots:[],
+    const d={i,k,g,stage:ROSETTE,t:preAge||0,cells:[],roots:[],
              starve:0,seedsLeft:0,dead:false};
     let x=i,z=k,s=((i*73+k*151+29)>>>0)||7;
     const rnd=()=>{s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296;};
     for(let dep=0;dep<14;dep++){
       const j=g-1-dep; if(j<0)break;
+      /* taproots follow the soil, not a fixed plane */
       if(rnd()<0.25)x=Math.max(0,Math.min(this.soil.nx-1,x+(rnd()<0.5?-1:1)));
       if(rnd()<0.25)z=Math.max(0,Math.min(this.soil.nz-1,z+(rnd()<0.5?-1:1)));
       const p=(x*this.soil.ny+j)*this.soil.nz+z;
@@ -720,10 +782,11 @@ class Plants{
 
   draw(d){
     this.clearCells(d);
-    const {nx,ny,nz}=this.soil, g=this.soil.ground;
+    const {nx,ny,nz}=this.soil, g=d.g;
     const put=(i,j,k,v)=>{
-      if(i<0||i>=nx||j<g||j>=ny||k<0||k>=nz)return;
+      if(i<0||i>=nx||j<0||j>=ny||k<0||k>=nz)return;
       const n=(i*ny+j)*nz+k;
+      if(this.soil.solid[n])return;      // a hillside is not overwritten
       this.sky.setN(n,v);
       d.cells.push(n);
     };
@@ -753,7 +816,6 @@ class Plants{
 
   step(){
     const M=this.soil.a.moisture, N=this.soil.a.nitrogen;
-    const g=this.soil.ground;
     let removed=false;
     for(const d of this.list){
       let mGot=0,nGot=0;
@@ -773,8 +835,8 @@ class Plants{
         d.stage=SEEDHEAD;d.t=0;d.seedsLeft=16;this.draw(d);
       }else if(d.stage===SEEDHEAD){
         if(d.seedsLeft>0&&fed&&daylight&&d.t%7===0){
-          const n=(d.i*this.soil.ny+(g+6))*this.soil.nz+d.k;
-          if(g+6<this.soil.ny&&this.sky.cell[n]===EMPTY){
+          const n=(d.i*this.soil.ny+(d.g+6))*this.soil.nz+d.k;
+          if(d.g+6<this.soil.ny&&this.sky.cell[n]===EMPTY){
             this.sky.setN(n,SEED);d.seedsLeft--;
           }
         }
@@ -837,7 +899,7 @@ function createSim(){
                roots:{count:60,thick:0.55,depth:11,drift:0.35,branch:0.05}}}
   };
   const packR=new Uint8Array(N*4), packS=new Uint8Array(N*4);
-  let view='elements', opacity=0.55, openness=0.78;
+  let view='elements', opacity=0.55, openness=0.78, rainScale=1;
   let weather=0, day=0, wSeed=12345, storm=0, stormLeft=0, spreading=false, wind=0, sun=0;
   function wrnd(){wSeed^=wSeed<<13;wSeed>>>=0;wSeed^=wSeed>>17;wSeed^=wSeed<<5;wSeed>>>=0;
     return wSeed/4294967296;}
@@ -886,10 +948,11 @@ function createSim(){
     for(const key of ['R','S']){
       const o=worlds[key];
       for(const {i,k} of o.sky.landed){
-        const wet=o.soil.a.moisture[o.soil.idx(i,GROUND-1,k)]>0.035
-          || o.sky.at(i,GROUND,k)===WATER
-          || (i>0&&o.sky.at(i-1,GROUND,k)===WATER)
-          || (i+1<NX&&o.sky.at(i+1,GROUND,k)===WATER);
+        const sy=o.soil.surfaceY[i*NZ+k];
+        const wet=o.soil.a.moisture[o.soil.idx(i,sy,k)]>0.035
+          || o.sky.at(i,sy+1,k)===WATER
+          || (i>0&&o.sky.at(i-1,sy+1,k)===WATER)
+          || (i+1<NX&&o.sky.at(i+1,sy+1,k)===WATER);
         if(wet&&wrnd()<0.4)o.plants.add(i,k,0);
         else o.soil.deposit(i,k,'organic',0.01);
       }
@@ -908,7 +971,7 @@ function createSim(){
     const u=[weatherUnit];
     for(const key of ['R','S']){
       const o=worlds[key];
-      u.push(()=>o.sky.stepBegin(weather));
+      u.push(()=>o.sky.stepBegin(weather*rainScale));
       for(let j=GROUND;j<NY;j+=CH_J){
         const a2=j, b2=Math.min(j+CH_J,NY);
         u.push(()=>o.sky.stepRows(a2,b2,wind));
@@ -944,25 +1007,35 @@ function createSim(){
      packing runs in array order. airOnly skips the soil rows: the soil
      changes slowly and is repacked every fourth step. */
   function occRange(o,airOnly,i0,i1){
-    const {soil,sky,occ}=o, a=soil.a;
+    const {soil,sky,occ}=o, a=soil.a, solid=soil.solid;
     const fieldMode=view!=='elements';
+    const lo=soil.minSurf;           // below this everything is soil
     for(let i=i0;i<i1;i++){
       const base=i*NY*NZ;
       if(!airOnly){
-        if(!fieldMode)occ.fill(1,base,base+GROUND*NZ);
+        if(!fieldMode)occ.fill(1,base,base+lo*NZ);
         else{
           const V=a[view];
-          for(let n=base;n<base+GROUND*NZ;n++)occ[n]=V[n]>0.02?1:0;
+          for(let n=base;n<base+lo*NZ;n++)occ[n]=V[n]>0.02?1:0;
         }
       }
-      for(let n=base+GROUND*NZ;n<base+NY*NZ;n++)occ[n]=sky.cell[n]?1:0;
+      /* the band where the surface wanders, and the sky above it */
+      if(!fieldMode){
+        for(let n=base+lo*NZ;n<base+NY*NZ;n++)
+          occ[n]=solid[n]?1:(sky.cell[n]?1:0);
+      }else{
+        const V=a[view];
+        for(let n=base+lo*NZ;n<base+NY*NZ;n++)
+          occ[n]=solid[n]?(V[n]>0.02?1:0):(sky.cell[n]?1:0);
+      }
     }
   }
   function colourRange(o,out,airOnly,i0,i1){
     const {soil,sky,occ}=o, a=soil.a, sc=new Float32Array(8);
     const fieldMode=view!=='elements';
     const fc=FIELDCOL[view]||[200,200,200];
-    const j0=airOnly?GROUND:0;
+    const solid=soil.solid;
+    const j0=airOnly?soil.minSurf:0;
     /* the speckle pattern advances with the soil repack, so microbial
        activity reads as points that shift rather than a fixed stipple */
     const shim=((soil.tick>>2)*7919)>>>0, G=grain.length;
@@ -971,11 +1044,11 @@ function createSim(){
       C_FLOWER[1]*sun+150*(1-sun),
       C_FLOWER[2]*sun+60*(1-sun)];
     for(let i=i0;i<i1;i++)for(let j=j0;j<NY;j++){
-      const air=j>=GROUND;
       let p=(i*NY+j)*NZ;
       for(let k=0;k<NZ;k++,p++){
         const t=p*4;
         if(!occ[p]){out[t]=0;out[t+1]=0;out[t+2]=0;out[t+3]=0;continue;}
+        const air=!solid[p];
         let near=1, seen=1;
         if(i>0){near+=occ[p-SXp];seen++;} if(i+1<NX){near+=occ[p+SXp];seen++;}
         if(j>0){near+=occ[p-SYp];seen++;} if(j+1<NY){near+=occ[p+SYp];seen++;}
@@ -1016,7 +1089,7 @@ function createSim(){
              microbes this repack -- how many is set by the field itself */
           if(pick!==0&&ba>0.07){
             const hh=grain[(p+shim)%G];
-            if(hh<Math.min(ba*0.4,0.14))pick=2;
+            if(hh<Math.min(ba*0.5,0.18))pick=2;
           }
           const c=ELEMENTS[pick][1];
           const sh=pick===2?0.55+0.45*grain[(p+shim+1)%G]
@@ -1074,6 +1147,7 @@ function createSim(){
     },
     setView(v){view=v;},
     setLook(op,ok){opacity=op;openness=ok;},
+    setRain(v){rainScale=v;},
     worlds
   };
 }
@@ -1119,12 +1193,12 @@ function workerMain(){
    Main thread: WebGL raymarcher, controls, and an engine that prefers
    a Web Worker but falls back to running the simulation inline.
    =================================================================== */
-const BUILD=14;
+const BUILD=15;
 const cv=document.getElementById('gl');
 cv.width=880; cv.height=440;
 let gl=null, prog=null, U={}, texR=null, texS=null, glOK=false;
 let view='elements', opacity=0.55, openness=0.78, gap=0.20;
-let running=true, speed=1;
+let running=true, speed=2;
 const hist={R:[],S:[]};
 let lastStats=null, lastHistTick=-1;
 
@@ -1397,7 +1471,7 @@ function makeInlineEngine(){
   bootStage='running';
   const N4=NX*NY*NZ*4;
   const bufR=new Uint8Array(N4), bufS=new Uint8Array(N4);
-  let queue=[], phase='idle', stepN=0, interval=64, lastDone=0;
+  let queue=[], phase='idle', stepN=0, interval=32, lastDone=0, budget=16;
   const emitStats=()=>onFrame(bufR,bufS,sim.snapshot(),0,null);
   const startPack=(full)=>{queue=sim.packUnits(bufR,bufS,!full);phase='pack';};
   startPack(true);
@@ -1405,12 +1479,13 @@ function makeInlineEngine(){
   return {
     play(){}, pause(){},
     reset(){hist.R=[];hist.S=[];sim.reset();stepN=0;startPack(true);},
-    speed(v){interval=64/v;},
+    speed(v){interval=64/v;budget=[0,10,16,24,32][v]||16;},
+    rain(v){sim.setRain(v);},
     view(v){hist.R=[];hist.S=[];sim.setView(v);startPack(true);},
     look(op,ok){sim.setLook(op,ok);startPack(true);},
     pump(now){
-      const budget=performance.now()+12;
-      while(performance.now()<budget){
+      const stop=performance.now()+budget;
+      while(performance.now()<stop){
         if(!queue.length){
           if(phase==='pack'){phase='idle';emitStats();}
           if(!running)return;
@@ -1510,6 +1585,10 @@ const spd=document.getElementById('spd');
 spd.oninput=()=>{speed=+spd.value;
   document.getElementById('spdV').textContent=speed+'×';
   engine.speed(speed);};
+const rn=document.getElementById('rn');
+rn.oninput=()=>{const v=(+rn.value)/100;
+  document.getElementById('rnV').textContent=v.toFixed(1)+'×';
+  engine.rain(v);};
 
 const knob=(id,out,set,fmt,after)=>{
   const el2=document.getElementById(id);
@@ -1558,6 +1637,15 @@ function frame(now){
 }
 
 document.getElementById('foot').innerHTML=
+ `<b>The land.</b> The ground is no longer a plane. Both blocks sit on the same terrain — `+
+ `two octaves of noise with a slight overall fall to the right — because the comparison is `+
+ `between managements of one piece of land, not two different places. Water follows it: a `+
+ `refused drop moves to whichever neighbouring column stands lower, ponds where there is no `+
+ `lower neighbour, and counts as runoff where it leaves an edge. Watch the hollows on the `+
+ `synthetic block during a storm. The <b>rain</b> slider scales what the weather delivers, `+
+ `from drought at zero to two and a half times; the <b>speed</b> slider now also sets how `+
+ `much of each frame the simulation may use, so it changes the pace in fact rather than in `+
+ `name.<br><br>`+
  `<b>The dandelions.</b> Three grow on the regenerative block at the start; the synthetic block `+
  `starts bare. Each one is a rosette, a stem, a flower, then a seed head, and below it a taproot `+
  `written into the same root array the pasture roots use — so a dandelion feeds the soil the `+
